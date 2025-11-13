@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import TicketPrinter from '../services/TicketPrinter';
+import BluetoothPrinterService from '../services/BluetoothPrinterService';
 
 type Cliente = {
   id: number;
@@ -44,6 +45,14 @@ export default function SalesScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'credito' | null>(null);
+  const [printerConnected, setPrinterConnected] = useState(false);
+  const [printerName, setPrinterName] = useState<string>('');
+
+  useEffect(() => {
+    const status = BluetoothPrinterService.getStatus();
+    setPrinterConnected(status.connected);
+    setPrinterName(status.printer?.name || '');
+  }, []);
 
   const total = useMemo(
     () => cart.reduce((acc, it) => acc + it.precio * it.cantidad, 0),
@@ -74,45 +83,80 @@ export default function SalesScreen() {
 
   const processSale = async () => {
     if (!selectedClient) {
-      Alert.alert('Selecciona un cliente');
+      Alert.alert('Error', 'Selecciona un cliente');
       return;
     }
     if (!cart.length) {
-      Alert.alert('Agrega productos al carrito');
+      Alert.alert('Error', 'Agrega productos al carrito');
       return;
     }
     if (!metodoPago) {
-      Alert.alert('Selecciona un método de pago');
+      Alert.alert('Error', 'Selecciona un método de pago');
       return;
     }
 
-    const ticketLines: string[] = [];
-    ticketLines.push('================================');
-    ticketLines.push('            VENTA');
-    ticketLines.push('================================');
-    ticketLines.push(`CLIENTE: ${selectedClient.nombre}`);
-    ticketLines.push(`PAGO: ${metodoPago}`);
-    ticketLines.push(`FECHA: ${new Date().toLocaleString()}`);
-    ticketLines.push('--------------------------------');
-    cart.forEach(it => {
-      const line = `${it.descripcion.slice(0, 16)}  x${it.cantidad}  $${(it.precio * it.cantidad).toFixed(2)}`;
-      ticketLines.push(line);
-    });
-    ticketLines.push('--------------------------------');
-    ticketLines.push(`TOTAL: $${total.toFixed(2)}`);
-    ticketLines.push('================================');
+    try {
+      // Usar el nuevo servicio de tickets mejorado
+      await TicketPrinter.printSaleTicket({
+        clientName: selectedClient.nombre,
+        paymentMethod: metodoPago,
+        items: cart.map(item => ({
+          description: item.descripcion,
+          quantity: item.cantidad,
+          price: item.precio,
+          total: item.precio * item.cantidad,
+        })),
+        total: total,
+        businessName: 'Sistema de Gestión',
+      });
 
-    await TicketPrinter.print(ticketLines, 'Venta');
-    Alert.alert('Venta procesada', `Cliente: ${selectedClient.nombre}\nTotal: $${total.toFixed(2)}\nPago: ${metodoPago}`);
+      // Actualizar estado de impresora
+      const status = BluetoothPrinterService.getStatus();
+      setPrinterConnected(status.connected);
+      
+      if (status.connected) {
+        Alert.alert(
+          '🖨️ Venta Procesada',
+          `Cliente: ${selectedClient.nombre}\nTotal: $${total.toFixed(2)}\nPago: ${metodoPago}\n\nTicket enviado a: ${status.printer?.name}`,
+        );
+      } else {
+        Alert.alert(
+          '✅ Venta Procesada',
+          `Cliente: ${selectedClient.nombre}\nTotal: $${total.toFixed(2)}\nPago: ${metodoPago}`,
+        );
+      }
 
-    setCart([]);
-    setMetodoPago(null);
-    setSelectedClient(null);
+      // Limpiar formulario
+      setCart([]);
+      setMetodoPago(null);
+      setSelectedClient(null);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo procesar la venta');
+    }
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Punto de Venta</Text>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content}>
+
+      {/* Header con estado de impresora */}
+      <View style={styles.headerRow}>
+        <Text style={styles.headerTitle}>Punto de Venta</Text>
+        {printerConnected && (
+          <View style={styles.printerBadge}>
+            <Text style={styles.printerBadgeText}>🖨️ {printerName || 'OK'}</Text>
+          </View>
+        )}
+      </View>
+
+      {!printerConnected && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningIcon}>⚠️</Text>
+          <Text style={styles.warningText}>
+            Sin impresora. Los tickets se compartirán o deberás configurar una.
+          </Text>
+        </View>
+      )}
 
       {/* Cliente */}
       <View style={styles.card}>
@@ -255,8 +299,8 @@ export default function SalesScreen() {
         </View>
       </Modal>
 
-      <Text style={styles.note}>IndexedDB/Realm pendiente. Preventas y Faltantes: pendiente.</Text>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -275,7 +319,46 @@ function PayChip({ label, selected, onPress, disabled }: { label: string; select
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   content: { padding: 16, paddingBottom: 32 },
-  title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  printerBadge: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  printerBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  warningCard: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  warningIcon: { fontSize: 20 },
+  warningText: {
+    flex: 1,
+    color: '#E65100',
+    fontSize: 13,
+  },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#eee' },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { fontSize: 16, fontWeight: '600' },

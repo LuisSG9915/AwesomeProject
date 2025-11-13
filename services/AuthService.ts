@@ -1,4 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const API_BASE_URL = 'https://cbinfo.no-ip.info:9011';
+
+const SESSION_STORAGE_KEY = '@awesomeapp/current_user';
 
 export type Usuario = {
   claveEmpleado: string;
@@ -17,6 +21,7 @@ class AuthService {
   }
 
   async login(usuario: string, password: string): Promise<Usuario> {
+    console.log('Logging in user:', usuario);
     const url = `${API_BASE_URL}/api/Login/${encodeURIComponent(
       usuario,
     )}/${encodeURIComponent(password)}`;
@@ -38,11 +43,49 @@ class AuthService {
     }
 
     this._currentUser = user;
+
+    try {
+      await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+    } catch (storageError) {
+      console.error(
+        'No fue posible guardar la sesión localmente:',
+        storageError,
+      );
+    }
+
     return user;
   }
 
-  logout() {
+  async restoreSession(): Promise<Usuario | null> {
+    if (this._currentUser) {
+      return this._currentUser;
+    }
+
+    console.log('Attempting to restore session from storage');
+    try {
+      const stored = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
+      if (!stored) {
+        return null;
+      }
+
+      const parsed: Usuario = JSON.parse(stored);
+      console.log('Session restored:', parsed);
+      this._currentUser = parsed;
+      return parsed;
+    } catch (error) {
+      console.error('No fue posible restaurar la sesión:', error);
+      return null;
+    }
+  }
+
+  async logout() {
     this._currentUser = null;
+
+    try {
+      await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      console.error('No fue posible limpiar la sesión local:', error);
+    }
   }
 }
 

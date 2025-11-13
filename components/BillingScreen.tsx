@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Modal, TextInput, Alert, ScrollView } from 'react-native';
+import TicketPrinter from '../services/TicketPrinter';
 
 type Invoice = {
   id: number;
@@ -109,7 +110,21 @@ export default function BillingScreen() {
         Alert.alert('El importe no puede exceder el saldo');
         return;
       }
-      Alert.alert('Pagos registrados', `Facturas: ${selected.length}\nTotal: $${totalToPay.toFixed(2)}`);
+
+      // Imprimir ticket de pago
+      try {
+        const payMethod = efectivo ? 'Efectivo' : transferencia ? 'Transferencia' : 'Otro';
+        await TicketPrinter.printBillingTicket(
+          selectedClient,
+          selected.map(inv => ({ nota: inv.nota, importe: inv.importe })),
+          payMethod,
+          totalToPay,
+        );
+      } catch (error) {
+        console.error('Error al imprimir ticket:', error);
+      }
+
+      Alert.alert('✅ Pago Registrado', `Facturas: ${selected.length}\nTotal: $${totalToPay.toFixed(2)}`);
       setInvoices([]);
       setSelectedClient('');
       setSelectedClientId(null);

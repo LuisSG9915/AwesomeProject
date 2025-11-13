@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Modal, ScrollView, Alert } from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Modal, ScrollView, Alert, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import TicketPrinter from '../services/TicketPrinter';
+import FullSyncService from '../services/FullSyncService';
 
 type ReporteItem = {
   id: number;
@@ -14,23 +16,30 @@ type ReporteItem = {
   sucursal?: number;
   caja?: number;
   cve_cliente?: number;
+  nombreProducto?: string;
+  cantProducto?: number;
+  precio?: number;
 };
 
 type TicketLine = string;
 
 export default function ReporteVentasScreen() {
-  const today = useMemo(() => {
-    const d = new Date();
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  }, []);
+  const today = useMemo(() => new Date(), []);
 
-  const [fecha1, setFecha1] = useState(today);
-  const [fecha2, setFecha2] = useState(today);
+  const formatDate = (date: Date): string => {
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const [fecha1, setFecha1] = useState<Date>(today);
+  const [fecha2, setFecha2] = useState<Date>(today);
+  const [showPicker1, setShowPicker1] = useState(false);
+  const [showPicker2, setShowPicker2] = useState(false);
   const [items, setItems] = useState<ReporteItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [allVentas, setAllVentas] = useState<any[]>([]);
 
   const [ticketVisible, setTicketVisible] = useState(false);
   const [ticketContent, setTicketContent] = useState<TicketLine[]>([]);
@@ -45,17 +54,89 @@ export default function ReporteVentasScreen() {
     [items],
   );
 
+  useEffect(() => {
+    loadVentas();
+  }, []);
+
+  const loadVentas = async () => {
+    try {
+      await FullSyncService.initialize();
+      const ventas = FullSyncService.getVentas(500);
+      setAllVentas(ventas);
+    } catch (error) {
+      console.error('Error al cargar ventas:', error);
+      Alert.alert('Error', 'No se pudieron cargar las ventas de la base local');
+    }
+  };
+
+  const onChangeFecha1 = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowPicker1(false);
+    }
+    if (selectedDate) {
+      setFecha1(selectedDate);
+    }
+  };
+
+  const onChangeFecha2 = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowPicker2(false);
+    }
+    if (selectedDate) {
+      setFecha2(selectedDate);
+    }
+  };
+
+  const mapTipoPago = (tipo: number | undefined): 'Efectivo' | 'Credito' | 'Transferencia' => {
+    if (tipo === 1) return 'Efectivo';
+    if (tipo === 2) return 'Credito';
+    if (tipo === 3) return 'Transferencia';
+    return 'Efectivo';
+  };
+
   const consultar = () => {
     setLoading(true);
-    setTimeout(() => {
-      const mock: ReporteItem[] = [
-        { id: 1, no_venta: 1001, fecha: new Date().toISOString(), nombre: 'Cliente Uno', importe: 250.5, tipoPago: 'Efectivo', facturacion: true, timbrado: '0', sucursal: 1, caja: 1, cve_cliente: 10 },
-        { id: 2, no_venta: 1002, fecha: new Date().toISOString(), nombre: 'Cliente Dos', importe: 480, tipoPago: 'Transferencia', facturacion: true, timbrado: '1', sucursal: 1, caja: 1, cve_cliente: 11 },
-        { id: 3, no_venta: 1003, fecha: new Date().toISOString(), nombre: 'Cliente Tres', importe: 90, tipoPago: 'Credito', facturacion: false, timbrado: '0', sucursal: 1, caja: 1, cve_cliente: 12 },
-      ];
-      setItems(mock);
+    try {
+      if (!fecha1 || !fecha2) {
+        Alert.alert('Error', 'Selecciona ambas fechas');
+        setLoading(false);
+        return;
+      }
+
+      // Crear copias para no mutar los estados
+      const fecha1Parsed = new Date(fecha1);
+      const fecha2Parsed = new Date(fecha2);
+      fecha2Parsed.setHours(23, 59, 59, 999);
+
+      const filtered = allVentas.filter(venta => {
+        if (!venta.fecha) return false;
+        const ventaDate = new Date(venta.fecha);
+        return ventaDate >= fecha1Parsed && ventaDate <= fecha2Parsed;
+      });
+
+      const mapped: ReporteItem[] = filtered.map(venta => ({
+        id: venta.id,
+        no_venta: venta.noVenta || 0,
+        fecha: venta.fecha ? new Date(venta.fecha).toISOString() : new Date().toISOString(),
+        nombre: venta.nombreCliente || 'Sin nombre',
+        importe: venta.importe || 0,
+        tipoPago: mapTipoPago(venta.tipoPago),
+        facturacion: venta.folioFactura || false,
+        timbrado: '0',
+        sucursal: venta.sucursal,
+        cve_cliente: venta.cveCliente,
+        nombreProducto: venta.nombreProducto,
+        cantProducto: venta.cantProducto,
+        precio: venta.precio,
+      }));
+
+      setItems(mapped);
+    } catch (error) {
+      console.error('Error al filtrar ventas:', error);
+      Alert.alert('Error', 'Ocurrió un error al consultar las ventas');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   const generateTicket = (row: ReporteItem): TicketLine[] => {
@@ -66,8 +147,14 @@ export default function ReporteVentasScreen() {
     lines.push(`VENTA: ${row.no_venta}`);
     lines.push(`FECHA: ${new Date(row.fecha).toLocaleString()}`);
     lines.push(`CLIENTE: ${row.nombre}`);
-    lines.push(`PAGO: ${row.tipoPago}`);
+    if (row.nombreProducto) {
+      lines.push('--------------------------------');
+      lines.push(`PRODUCTO: ${row.nombreProducto}`);
+      if (row.cantProducto) lines.push(`CANTIDAD: ${row.cantProducto}`);
+      if (row.precio) lines.push(`PRECIO UNIT: $${row.precio.toFixed(2)}`);
+    }
     lines.push('--------------------------------');
+    lines.push(`PAGO: ${row.tipoPago}`);
     lines.push(`TOTAL: $${row.importe.toFixed(2)}`);
     lines.push('================================');
     return lines;
@@ -89,19 +176,116 @@ export default function ReporteVentasScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Consulta a Ventas</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>Consulta a Ventas</Text>
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={loadVentas}
+        >
+          <Text style={styles.refreshIcon}>🔄</Text>
+        </TouchableOpacity>
+      </View>
+
+      {allVentas.length > 0 && (
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>
+            📊 {allVentas.length} ventas sincronizadas en la base local
+          </Text>
+        </View>
+      )}
+
+      {allVentas.length === 0 && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningIcon}>⚠️</Text>
+          <Text style={styles.warningText}>
+            No hay ventas sincronizadas. Inicia sesión nuevamente o sincroniza desde el menú principal.
+          </Text>
+        </View>
+      )}
 
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={styles.col}>
             <Text style={styles.formLabel}>Fecha inicial</Text>
-            <TextInput placeholder="DD/MM/YYYY" value={fecha1} onChangeText={setFecha1} style={styles.input} />
+            <TouchableOpacity 
+              style={styles.dateInput}
+              onPress={() => setShowPicker1(true)}
+            >
+              <Text style={styles.dateText}>📅 {formatDate(fecha1)}</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.col}>
             <Text style={styles.formLabel}>Fecha final</Text>
-            <TextInput placeholder="DD/MM/YYYY" value={fecha2} onChangeText={setFecha2} style={styles.input} />
+            <TouchableOpacity 
+              style={styles.dateInput}
+              onPress={() => setShowPicker2(true)}
+            >
+              <Text style={styles.dateText}>📅 {formatDate(fecha2)}</Text>
+            </TouchableOpacity>
           </View>
         </View>
+
+        {showPicker1 && (
+          <>
+            {Platform.OS === 'ios' && (
+              <View style={styles.iosPickerContainer}>
+                <View style={styles.iosPickerHeader}>
+                  <TouchableOpacity onPress={() => setShowPicker1(false)}>
+                    <Text style={styles.iosPickerButton}>Listo</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={fecha1}
+                  mode="date"
+                  display="spinner"
+                  onChange={onChangeFecha1}
+                  maximumDate={new Date()}
+                  style={styles.iosPicker}
+                />
+              </View>
+            )}
+            {Platform.OS === 'android' && (
+              <DateTimePicker
+                value={fecha1}
+                mode="date"
+                display="default"
+                onChange={onChangeFecha1}
+                maximumDate={new Date()}
+              />
+            )}
+          </>
+        )}
+
+        {showPicker2 && (
+          <>
+            {Platform.OS === 'ios' && (
+              <View style={styles.iosPickerContainer}>
+                <View style={styles.iosPickerHeader}>
+                  <TouchableOpacity onPress={() => setShowPicker2(false)}>
+                    <Text style={styles.iosPickerButton}>Listo</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={fecha2}
+                  mode="date"
+                  display="spinner"
+                  onChange={onChangeFecha2}
+                  maximumDate={new Date()}
+                  style={styles.iosPicker}
+                />
+              </View>
+            )}
+            {Platform.OS === 'android' && (
+              <DateTimePicker
+                value={fecha2}
+                mode="date"
+                display="default"
+                onChange={onChangeFecha2}
+                maximumDate={new Date()}
+              />
+            )}
+          </>
+        )}
         <TouchableOpacity style={styles.secondaryBtn} onPress={consultar} disabled={loading}>
           <Text style={styles.secondaryBtnText}>{loading ? 'Cargando...' : 'Consultar'}</Text>
         </TouchableOpacity>
@@ -167,10 +351,101 @@ export default function ReporteVentasScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   content: { padding: 16, paddingBottom: 32 },
-  title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
+  titleRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 12 
+  },
+  title: { fontSize: 22, fontWeight: 'bold' },
+  refreshButton: {
+    backgroundColor: '#1976D2',
+    borderRadius: 10,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  refreshIcon: { fontSize: 20 },
+  infoCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1976D2',
+  },
+  infoText: {
+    color: '#0D47A1',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  warningCard: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  warningIcon: { fontSize: 24 },
+  warningText: {
+    flex: 1,
+    color: '#E65100',
+    fontSize: 14,
+    fontWeight: '500',
+  },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#eee' },
-  formLabel: { fontWeight: '600' },
+  formLabel: { fontWeight: '600', marginBottom: 6 },
   input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, marginTop: 4 },
+  dateInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#1976D2',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 4,
+    shadowColor: '#1976D2',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dateText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1976D2',
+  },
+  iosPickerContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  iosPickerHeader: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    alignItems: 'flex-end',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  iosPickerButton: {
+    color: '#1976D2',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  iosPicker: {
+    width: '100%',
+    height: 200,
+  },
   secondaryBtn: { backgroundColor: '#e0e0e0', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 12 },
   secondaryBtnText: { color: '#222', fontWeight: '700' },
   cardTitle: { fontWeight: '600', fontSize: 16, marginBottom: 8 },

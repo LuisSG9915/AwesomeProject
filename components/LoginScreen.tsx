@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,24 +9,56 @@ import {
   Alert,
 } from 'react-native';
 import AuthService from '../services/AuthService';
+import FullSyncService, { SyncProgress } from '../services/FullSyncService';
+import SyncProgressModal from './SyncProgressModal';
 
 export default function LoginScreen({ navigation }: any) {
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress[]>([]);
+
+  useEffect(() => {
+    console.log('Checking for existing session in LoginScreen');
+    const checkSession = async () => {
+      const session = await AuthService.restoreSession();
+      if (session) {
+        console.log('Session found, redirecting to Home');
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+      }
+    };
+    checkSession();
+  }, [navigation]);
 
   const handleLogin = async () => {
     if (!usuario || !password) {
       Alert.alert('Campos requeridos', 'Ingresa usuario y contraseña');
       return;
     }
+    console.log('Login attempt with user:', usuario);
     setLoading(true);
     try {
       await AuthService.login(usuario.trim(), password.trim());
+      
+      // Iniciar sincronización después del login exitoso
+      setLoading(false);
+      setSyncing(true);
+      setSyncProgress([]);
+      
+      await FullSyncService.syncAll(1, (progress: SyncProgress) => {
+        setSyncProgress(prev => [...prev, progress]);
+      });
+      
+      // Esperar un momento para que el usuario vea que completó
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 1500));
+      
+      setSyncing(false);
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch (err: any) {
       const msg = err?.message || 'Ocurrió un error al iniciar sesión';
       Alert.alert('No autorizado', msg);
+      setSyncing(false);
     } finally {
       setLoading(false);
     }
@@ -72,6 +104,8 @@ export default function LoginScreen({ navigation }: any) {
       <Text style={styles.note}>
         Login solo online por ahora. IndexedDB/Realm pendiente.
       </Text>
+
+      <SyncProgressModal visible={syncing} progress={syncProgress} />
     </View>
   );
 }

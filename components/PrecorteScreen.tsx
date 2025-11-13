@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput, Alert, ScrollView } from 'react-native';
 import TicketPrinter from '../services/TicketPrinter';
+import BluetoothPrinterService from '../services/BluetoothPrinterService';
 
 type PrecorteItem = {
   id: number;
@@ -26,38 +27,63 @@ export default function PrecorteScreen() {
     { id: 3, clave_prod: 'PROD-003', entradas: 0, salidas: 5, ifValue: -5 },
   ]);
   const [totalEfectivo, setTotalEfectivo] = useState(1234.56);
+  const [printerConnected, setPrinterConnected] = useState(false);
+  const [printerName, setPrinterName] = useState<string>('');
+
+  useEffect(() => {
+    const status = BluetoothPrinterService.getStatus();
+    setPrinterConnected(status.connected);
+    setPrinterName(status.printer?.name || '');
+  }, []);
 
   const consultar = () => {
     Alert.alert('Consulta', `Fecha: ${fecha}`);
   };
 
   const imprimir = async () => {
-    const lines: string[] = [];
-    lines.push('================================');
-    lines.push('          PRECORTE');
-    lines.push('================================');
-    lines.push(`FECHA: ${new Date().toLocaleString()}`);
-    lines.push('================================');
-    lines.push('PRODUCTO');
-    lines.push('ENTRADA      SALIDA     IF');
-    lines.push('--------------------------------');
-    items.forEach(it => {
-      lines.push(it.clave_prod.slice(0, 32));
-      const ent = it.entradas.toFixed(1).padStart(8);
-      const sal = it.salidas.toFixed(1).padStart(8);
-      const inv = it.ifValue.toFixed(1).padStart(8);
-      lines.push(`  ${ent} ${sal} ${inv}`);
-    });
-    lines.push('');
-    lines.push(`TOTAL EFECTIVO: $${totalEfectivo.toFixed(2)}`);
-    await TicketPrinter.print(lines, 'Precorte');
+    try {
+      await TicketPrinter.printPrecorteTicket({
+        date: new Date(fecha),
+        items: items.map(it => ({
+          product: it.clave_prod,
+          entries: it.entradas,
+          exits: it.salidas,
+          inventory: it.ifValue,
+        })),
+        totalCash: totalEfectivo,
+      });
+      
+      // Actualizar estado de impresora
+      const status = BluetoothPrinterService.getStatus();
+      setPrinterConnected(status.connected);
+      
+      if (status.connected) {
+        Alert.alert('🖨️ Impreso', `Ticket enviado a ${status.printer?.name}`);
+      }
+    } catch (error) {
+      Alert.alert('❌ Error', 'No se pudo imprimir el precorte');
+    }
   };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Precorte</Text>
+        {printerConnected && (
+          <View style={styles.printerBadge}>
+            <Text style={styles.printerBadgeText}>🖨️ {printerName || 'Conectada'}</Text>
+          </View>
+        )}
       </View>
+
+      {!printerConnected && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningIcon}>⚠️</Text>
+          <Text style={styles.warningText}>
+            No hay impresora configurada. Ve a Configuración de Impresora para conectar una.
+          </Text>
+        </View>
+      )}
 
       <View style={styles.card}>
         <Text style={styles.formLabel}>Fecha</Text>
@@ -109,6 +135,34 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 32 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { fontSize: 22, fontWeight: 'bold' },
+  printerBadge: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  printerBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  warningCard: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  warningIcon: { fontSize: 20 },
+  warningText: {
+    flex: 1,
+    color: '#E65100',
+    fontSize: 13,
+  },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#eee' },
   cardTitle: { fontWeight: '600', fontSize: 16, marginBottom: 8 },
   formLabel: { fontWeight: '600', marginBottom: 6 },
