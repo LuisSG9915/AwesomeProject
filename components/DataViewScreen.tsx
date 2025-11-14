@@ -10,8 +10,16 @@ import {
   Alert,
 } from 'react-native';
 import FullSyncService from '../services/FullSyncService';
+import { COLORS } from '../theme/theme';
 
-type EntityType = 'ventas' | 'usuarios' | 'productos' | 'precios' | 'inventario' | 'cartera' | 'clientes';
+type EntityType =
+  | 'ventas'
+  | 'usuarios'
+  | 'productos'
+  | 'precios'
+  | 'inventario'
+  | 'cartera'
+  | 'clientes';
 
 interface EntityTab {
   key: EntityType;
@@ -34,42 +42,52 @@ export default function DataViewScreen() {
   const [data, setData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const ITEMS_PER_PAGE = 50;
 
   const loadData = useCallback(async () => {
     try {
       await FullSyncService.initialize();
-      
+
       const newStats = FullSyncService.getStats();
       setStats(newStats);
 
+      const offset = currentPage * ITEMS_PER_PAGE;
+
       switch (selectedTab) {
         case 'ventas':
-          setData(FullSyncService.getVentas(50));
+          setData(FullSyncService.getVentasPaginated(offset, ITEMS_PER_PAGE));
           break;
         case 'usuarios':
-          setData(FullSyncService.getUsuarios(50));
+          setData(FullSyncService.getUsuariosPaginated(offset, ITEMS_PER_PAGE));
           break;
         case 'productos':
-          setData(FullSyncService.getProductos(50));
+          setData(
+            FullSyncService.getProductosPaginated(offset, ITEMS_PER_PAGE),
+          );
           break;
         case 'precios':
-          setData(FullSyncService.getPrecios(50));
+          setData(FullSyncService.getPreciosPaginated(offset, ITEMS_PER_PAGE));
           break;
         case 'inventario':
-          setData(FullSyncService.getInventario(50));
+          setData(
+            FullSyncService.getInventarioPaginated(offset, ITEMS_PER_PAGE),
+          );
           break;
         case 'cartera':
-          setData(FullSyncService.getCartera(50));
+          setData(FullSyncService.getCarteraPaginated(offset, ITEMS_PER_PAGE));
           break;
         case 'clientes':
-          setData(FullSyncService.getClientesFull(50));
+          setData(
+            FullSyncService.getClientesFullPaginated(offset, ITEMS_PER_PAGE),
+          );
           break;
       }
     } catch (error) {
       console.error('Error al cargar datos:', error);
       Alert.alert('Error', 'No se pudieron cargar los datos');
     }
-  }, [selectedTab]);
+  }, [selectedTab, currentPage]);
 
   useEffect(() => {
     loadData();
@@ -81,17 +99,40 @@ export default function DataViewScreen() {
     setRefreshing(false);
   }, [loadData]);
 
+  const handleTabChange = (tab: EntityType) => {
+    setSelectedTab(tab);
+    setCurrentPage(0);
+  };
+
+  const handleNextPage = () => {
+    const totalRecords = getCount();
+    const maxPage = Math.ceil(totalRecords / ITEMS_PER_PAGE) - 1;
+    if (currentPage < maxPage) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
   const renderVenta = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>
-        <Text style={styles.cardSubtitle}>{item.fecha?.toLocaleDateString()}</Text>
+        <Text style={styles.cardSubtitle}>
+          {item.fecha?.toLocaleDateString()}
+        </Text>
       </View>
       <View style={styles.cardBody}>
         <Text style={styles.cardText}>Cliente: {item.nombreCliente}</Text>
         <Text style={styles.cardText}>Producto: {item.nombreProducto}</Text>
         <Text style={styles.cardText}>Cantidad: {item.cantProducto}</Text>
-        <Text style={styles.cardPrice}>Importe: ${item.importe?.toFixed(2)}</Text>
+        <Text style={styles.cardPrice}>
+          Importe: ${item.importe?.toFixed(2)}
+        </Text>
         <Text style={styles.cardText}>Vendedor: {item.vendedor}</Text>
       </View>
     </View>
@@ -105,8 +146,12 @@ export default function DataViewScreen() {
       </View>
       <View style={styles.cardBody}>
         <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
-        <Text style={styles.cardText}>Crédito: {item.credito ? 'Sí' : 'No'}</Text>
-        <Text style={styles.cardText}>Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}</Text>
+        <Text style={styles.cardText}>
+          Crédito: {item.credito ? 'Sí' : 'No'}
+        </Text>
+        <Text style={styles.cardText}>
+          Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
+        </Text>
         {item.latitud && item.longitud ? (
           <Text style={styles.cardText}>
             Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
@@ -190,7 +235,9 @@ export default function DataViewScreen() {
       <View style={styles.cardBody}>
         <Text style={styles.cardText}>Perfil: {item.descripcionPerfil}</Text>
         <Text style={styles.cardText}>Puesto: {item.descripcionPuesto}</Text>
-        <Text style={styles.cardText}>Sucursal Origen: {item.sucursalOrigen}</Text>
+        <Text style={styles.cardText}>
+          Sucursal Origen: {item.sucursalOrigen}
+        </Text>
       </View>
     </View>
   );
@@ -250,10 +297,15 @@ export default function DataViewScreen() {
           <TouchableOpacity
             key={tab.key}
             style={[styles.tab, selectedTab === tab.key && styles.tabActive]}
-            onPress={() => setSelectedTab(tab.key)}
+            onPress={() => handleTabChange(tab.key)}
           >
             <Text style={styles.tabIcon}>{tab.icon}</Text>
-            <Text style={[styles.tabText, selectedTab === tab.key && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                selectedTab === tab.key && styles.tabTextActive,
+              ]}
+            >
               {tab.title}
             </Text>
             <View style={styles.badge}>
@@ -270,6 +322,35 @@ export default function DataViewScreen() {
         <Text style={styles.statsText}>
           Mostrando {data.length} de {getCount()} registros
         </Text>
+      </View>
+
+      {/* Pagination Controls */}
+      <View style={styles.paginationContainer}>
+        <TouchableOpacity
+          style={[
+            styles.paginationButton,
+            currentPage === 0 && styles.paginationButtonDisabled,
+          ]}
+          onPress={handlePreviousPage}
+          disabled={currentPage === 0}
+        >
+          <Text style={styles.paginationButtonText}>← Anterior</Text>
+        </TouchableOpacity>
+        <Text style={styles.paginationInfo}>
+          Página {currentPage + 1} de{' '}
+          {Math.ceil(getCount() / ITEMS_PER_PAGE) || 1}
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.paginationButton,
+            currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1 &&
+              styles.paginationButtonDisabled,
+          ]}
+          onPress={handleNextPage}
+          disabled={currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1}
+        >
+          <Text style={styles.paginationButtonText}>Siguiente →</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Data List */}
@@ -298,12 +379,12 @@ export default function DataViewScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: COLORS.background,
   },
   tabsContainer: {
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: COLORS.border,
     maxHeight: 90,
   },
   tabsContent: {
@@ -320,7 +401,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabActive: {
-    backgroundColor: '#1976D2',
+    backgroundColor: COLORS.primary,
   },
   tabIcon: {
     fontSize: 24,
@@ -329,7 +410,7 @@ const styles = StyleSheet.create({
   tabText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: COLORS.textSecondary,
   },
   tabTextActive: {
     color: '#FFF',
@@ -346,25 +427,25 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textPrimary,
   },
   statsContainer: {
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.surface,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: COLORS.border,
   },
   statsText: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textSecondary,
     fontWeight: '500',
   },
   listContent: {
     padding: 16,
   },
   card: {
-    backgroundColor: '#FFF',
+    backgroundColor: COLORS.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -391,7 +472,7 @@ const styles = StyleSheet.create({
   },
   cardSubtitle: {
     fontSize: 12,
-    color: '#999',
+    color: COLORS.muted,
     marginLeft: 8,
   },
   cardBody: {
@@ -399,13 +480,13 @@ const styles = StyleSheet.create({
   },
   cardText: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textSecondary,
     lineHeight: 20,
   },
   cardPrice: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1976D2',
+    color: COLORS.primary,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -419,11 +500,43 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#666',
+    color: COLORS.textSecondary,
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#999',
+    color: COLORS.muted,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  paginationButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  paginationButtonDisabled: {
+    backgroundColor: '#BDBDBD',
+    opacity: 0.5,
+  },
+  paginationButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  paginationInfo: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
   },
 });

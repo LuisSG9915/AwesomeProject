@@ -34,6 +34,7 @@ import AuthService from './services/AuthService';
 import FullSyncService, { SyncProgress } from './services/FullSyncService';
 import SyncProgressModal from './components/SyncProgressModal';
 import BluetoothPrinterService from './services/BluetoothPrinterService';
+import { APP_NAME, COLORS } from './theme/theme';
 import 'react-native-devsettings';
 // OR if you are using AsyncStorage
 import 'react-native-devsettings/withAsyncStorage';
@@ -45,7 +46,7 @@ function App() {
   useEffect(() => {
     // App initialization
     console.log('App initialized');
-    
+
     // Conectar automáticamente a la última impresora usada
     BluetoothPrinterService.connectToSavedPrinter().catch(err => {
       console.log('No hay impresora guardada o no se pudo conectar:', err);
@@ -67,7 +68,7 @@ function App() {
           initialRouteName="Login"
           screenOptions={{
             headerStyle: {
-              backgroundColor: '#1976D2',
+              backgroundColor: COLORS.primary,
             },
             headerTintColor: '#fff',
             headerTitleStyle: {
@@ -178,7 +179,8 @@ function AppContent({ navigation }: { navigation: any }) {
         setSyncProgress(prev => [...prev, progress]);
       });
 
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
+      // Mantener el modal visible 2 segundos después de terminar
+      await new Promise<void>(resolve => setTimeout(resolve, 2000));
       Alert.alert(
         '✅ Sincronización Completa',
         'Todos los datos han sido actualizados correctamente.',
@@ -239,15 +241,15 @@ function AppContent({ navigation }: { navigation: any }) {
       screen: 'ReporteVentas',
       description: 'Consulta histórico de ventas',
     },
-    {
-      id: 'grupos',
-      title: 'Grupos de Clientes',
-      icon: '👥',
-      color: '#3949AB',
-      gradient: ['#3949AB', '#283593'],
-      screen: 'ClienteGrupos',
-      description: 'Administra catálogos en Realm',
-    },
+    // {
+    //   id: 'grupos',
+    //   title: 'Grupos de Clientes',
+    //   icon: '👥',
+    //   color: '#3949AB',
+    //   gradient: ['#3949AB', '#283593'],
+    //   screen: 'ClienteGrupos',
+    //   description: 'Administra catálogos en Realm',
+    // },
     {
       id: 'dataview',
       title: 'Datos Sincronizados',
@@ -281,7 +283,7 @@ function AppContent({ navigation }: { navigation: any }) {
             <View style={styles.headerTop}>
               <View>
                 <Text style={styles.welcomeText}>Bienvenido</Text>
-                <Text style={styles.businessName}>Sistema de Gestión</Text>
+                <Text style={styles.businessName}>{APP_NAME}</Text>
                 <Text style={styles.userName}>👤 {userName}</Text>
               </View>
               <TouchableOpacity
@@ -341,7 +343,7 @@ function AppContent({ navigation }: { navigation: any }) {
 
         {/* Footer Info */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Sistema de Gestión v1.0.0</Text>
+          <Text style={styles.footerText}>{APP_NAME} v1.0.0</Text>
           <Text style={styles.footerSubtext}>Desarrollado con ❤️</Text>
         </View>
       </ScrollView>
@@ -354,7 +356,7 @@ function AppContent({ navigation }: { navigation: any }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
   },
   containerDark: {
     backgroundColor: '#121212',
@@ -366,7 +368,7 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
   header: {
-    backgroundColor: '#1976D2',
+    backgroundColor: COLORS.primary,
     paddingTop: 40,
     paddingBottom: 30,
     paddingHorizontal: 20,
@@ -389,7 +391,7 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     fontSize: 16,
-    color: '#E3F2FD',
+    color: COLORS.primaryLight,
     fontWeight: '500',
   },
   businessName: {

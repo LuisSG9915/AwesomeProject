@@ -25,6 +25,8 @@ export interface SaleTicketData {
   businessName?: string;
   businessAddress?: string;
   taxId?: string;
+  sellerName?: string;
+  branch?: number | string;
 }
 
 export interface PrecorteTicketData {
@@ -88,48 +90,78 @@ class TicketPrinter {
   generateSaleTicket(data: SaleTicketData): TicketContent {
     const lines: TicketContent = [];
     const date = data.date || new Date();
+    const width = this.DEFAULT_WIDTH;
 
-    // Header
+    const businessName = data.businessName || 'FRESKY HIELO';
+
+    // Encabezado de empresa
     lines.push(this.separator());
-    if (data.businessName) {
-      lines.push(this.center(data.businessName));
-    }
+    lines.push(this.center(businessName, width));
+
     if (data.businessAddress) {
-      lines.push(this.center(data.businessAddress));
+      lines.push(this.center(data.businessAddress, width));
+    } else {
+      lines.push(this.center('Productores de hielo y agua', width));
+      lines.push(this.center('purificados del golfo', width));
     }
+
     if (data.taxId) {
-      lines.push(this.center(`RFC: ${data.taxId}`));
+      lines.push(this.center(`RFC: ${data.taxId}`, width));
+    } else {
+      lines.push(this.center('RFC: PHA030403QX9', width));
     }
-    lines.push(this.separator());
-    lines.push(this.center('TICKET DE VENTA'));
-    lines.push(this.separator());
 
-    // Información general
+    lines.push(this.center('TEL 01 279 8 34 21 10', width));
+    lines.push(this.separator('-'));
+
+    // Fecha y datos generales
+    lines.push(`Fecha: ${date.toLocaleString('es-MX')}`);
+
+    if (data.sellerName) {
+      lines.push(`Vendedor: ${data.sellerName}`);
+    }
+
+    if (data.branch !== undefined) {
+      lines.push(`Sucursal: ${String(data.branch)}`);
+    }
+
+    lines.push(`Cliente: ${data.clientName}`);
+
     if (data.ticketNumber) {
-      lines.push(`TICKET: ${data.ticketNumber}`);
+      lines.push(`Id Venta: ${data.ticketNumber}`);
     }
-    lines.push(`FECHA: ${date.toLocaleString('es-MX')}`);
-    lines.push(`CLIENTE: ${data.clientName}`);
-    lines.push(`PAGO: ${data.paymentMethod}`);
+
     lines.push(this.separator('-'));
 
-    // Items
-    lines.push(this.leftRight('DESCRIPCIÓN', 'IMPORTE'));
-    lines.push(this.separator('-'));
+    // Encabezado de productos (ancho fijo)
+    lines.push('CANT  DESC       PRECIO  IMPORTE');
 
+    // Detalle de productos
     data.items.forEach(item => {
-      const desc = item.description.substring(0, 20);
-      lines.push(desc);
-      const qtyPrice = `${item.quantity} x $${item.price.toFixed(2)}`;
-      const total = `$${item.total.toFixed(2)}`;
-      lines.push(this.leftRight(qtyPrice, total));
+      const cantidad = item.quantity.toString().padEnd(4).substring(0, 4);
+      const desc = item.description.substring(0, 10).padEnd(10);
+      const precio = `$${item.price.toFixed(2)}`;
+      const importe = `$${item.total.toFixed(2)}`;
+      const precioCol = precio.padStart(7).substring(0, 7);
+      const importeCol = importe.padStart(8).substring(0, 8);
+
+      const linea = `${cantidad}  ${desc}${precioCol} ${importeCol}`;
+      lines.push(linea);
     });
 
-    // Total
     lines.push(this.separator('-'));
-    lines.push(this.leftRight('TOTAL:', `$${data.total.toFixed(2)}`));
+
+    // Forma de pago y total
+    const metodo = (data.paymentMethod || '').toString().toLowerCase();
+    let metodoLabel = 'EFECTIVO';
+    if (metodo.includes('cred')) metodoLabel = 'CREDITO';
+    else if (metodo.includes('trans')) metodoLabel = 'TRANSFERENCIA';
+
+    lines.push(this.center('FORMA DE PAGO', width));
+    lines.push(this.leftRight(metodoLabel, `$${data.total.toFixed(2)}`, width));
+
     lines.push(this.separator());
-    lines.push(this.center('¡GRACIAS POR SU COMPRA!'));
+    lines.push(this.center('GRACIAS POR SU COMPRA', width));
     lines.push(this.separator());
 
     return lines;
@@ -140,39 +172,52 @@ class TicketPrinter {
    */
   generatePrecorteTicket(data: PrecorteTicketData): TicketContent {
     const lines: TicketContent = [];
+    const width = this.DEFAULT_WIDTH;
 
-    lines.push(this.separator());
-    lines.push(this.center('PRECORTE'));
-    lines.push(this.separator());
-    lines.push(`FECHA: ${data.date.toLocaleString('es-MX')}`);
-    lines.push(this.separator('-'));
+    // Encabezado
+    lines.push(this.separator('=', width));
+    // Dejar el título sin centrar para evitar cortes raros en algunas impresoras
+    lines.push('PRECORTE');
+    lines.push(this.separator('=', width));
 
-    // Headers
-    lines.push('PRODUCTO');
-    lines.push('  ENTRADA  SALIDA    IF');
-    lines.push(this.separator('-'));
+    // Fecha y hora (zona horaria México)
+    const fechaHoraActual = data.date.toLocaleString('es-MX', {
+      timeZone: 'America/Mexico_City',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    } as any);
+    lines.push(`FECHA: ${fechaHoraActual}`);
+    lines.push(this.separator('=', width));
 
-    // Items
-    data.items.forEach(item => {
-      const prod = item.product.substring(0, this.DEFAULT_WIDTH);
-      lines.push(prod);
-      const ent = item.entries.toFixed(1).padStart(8);
-      const sal = item.exits.toFixed(1).padStart(8);
-      const inv = item.inventory.toFixed(1).padStart(8);
-      lines.push(`${ent}${sal}${inv}`);
-    });
+    // Encabezado de tabla: descripción y saldo
+    lines.push(this.leftRight('DESCRIPCION', 'SALDO', width));
+    lines.push(this.separator('-', width));
 
-    lines.push(this.separator('-'));
-    lines.push(this.leftRight('TOTAL EFECTIVO:', `$${data.totalCash.toFixed(2)}`));
-
-    if (data.totalSales !== undefined) {
-      lines.push(this.leftRight('TOTAL VENTAS:', `$${data.totalSales.toFixed(2)}`));
+    // Datos de productos: una sola línea por producto (descripcion + saldo)
+    if (data.items.length > 0) {
+      data.items.forEach(item => {
+        const maxDescLen = width - 10; // dejar espacio para el saldo y separador
+        const desc = item.product.toString().substring(0, maxDescLen);
+        const saldo = item.inventory.toFixed(1);
+        const saldoCol = saldo.padStart(8);
+        lines.push(this.leftRight(desc, saldoCol, width));
+      });
+    } else {
+      lines.push('  No hay datos disponibles');
     }
-    if (data.totalExpenses !== undefined) {
-      lines.push(this.leftRight('TOTAL GASTOS:', `$${data.totalExpenses.toFixed(2)}`));
-    }
 
-    lines.push(this.separator());
+    lines.push(this.separator('=', width));
+    lines.push('');
+
+    // Total efectivo
+    lines.push(`TOTAL EFECTIVO: $${data.totalCash.toFixed(2)}`);
+    lines.push('');
+    lines.push(this.separator('=', width));
+    lines.push('');
 
     return lines;
   }

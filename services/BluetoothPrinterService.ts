@@ -90,19 +90,48 @@ class BluetoothPrinterService {
       }
 
       const devices = await BluetoothManager.scanDevices();
-      const parsedDevices = JSON.parse(devices);
 
-      // Filtra solo impresoras comunes
-      const printers: PrinterDevice[] = parsedDevices
+      // La librería suele devolver un string JSON con { paired: [], found: [] }
+      // pero en algunas versiones puede devolver directamente un objeto/array.
+      let parsed: any;
+      try {
+        parsed = typeof devices === 'string' ? JSON.parse(devices) : devices;
+      } catch (parseError) {
+        console.warn('No se pudo parsear respuesta de scanDevices:', parseError);
+        parsed = devices;
+      }
+
+      let deviceList: any[] = [];
+      if (Array.isArray(parsed)) {
+        deviceList = parsed;
+      } else if (parsed && (parsed.found || parsed.paired)) {
+        deviceList = [
+          ...(parsed.found || []),
+          ...(parsed.paired || []),
+        ];
+      }
+
+      // Asegurar dispositivos únicos por address
+      const uniqueByAddress = new Map<string, any>();
+      deviceList.forEach((device: any) => {
+        if (device?.address && !uniqueByAddress.has(device.address)) {
+          uniqueByAddress.set(device.address, device);
+        }
+      });
+
+      const printers: PrinterDevice[] = Array.from(uniqueByAddress.values())
         .filter((device: any) => {
-          const name = device.name?.toUpperCase() || '';
+          if (!device.address) return false;
+          const name = (device.name || '').toString().toUpperCase();
+          // Si no tiene nombre, igual lo mostramos (genéricas)
+          if (!name) return true;
+          // Nombres comunes de impresoras térmicas
           return (
             name.includes('PRINTER') ||
             name.includes('THERMAL') ||
             name.includes('POS') ||
             name.includes('RP') ||
-            name.includes('BT') ||
-            device.name
+            name.includes('BT')
           );
         })
         .map((device: any) => ({

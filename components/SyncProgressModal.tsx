@@ -8,13 +8,17 @@ import {
   ScrollView,
 } from 'react-native';
 import { SyncProgress } from '../services/FullSyncService';
+import { COLORS } from '../theme/theme';
 
 interface SyncProgressModalProps {
   visible: boolean;
   progress: SyncProgress[];
 }
 
-const SyncProgressModal: React.FC<SyncProgressModalProps> = ({ visible, progress }) => {
+const SyncProgressModal: React.FC<SyncProgressModalProps> = ({
+  visible,
+  progress,
+}) => {
   const currentProgress = progress[progress.length - 1];
   const total = currentProgress?.total || 0;
   const current = currentProgress?.current || 0;
@@ -30,20 +34,20 @@ const SyncProgressModal: React.FC<SyncProgressModalProps> = ({ visible, progress
       <View style={styles.overlay}>
         <View style={styles.container}>
           <Text style={styles.title}>Sincronizando datos</Text>
-          
+
           <View style={styles.progressSection}>
             <Text style={styles.progressText}>
               {current} de {total} completados
             </Text>
-            
+
             <View style={styles.progressBarContainer}>
               <View style={[styles.progressBar, { width: `${percentage}%` }]} />
             </View>
-            
+
             <Text style={styles.percentageText}>{percentage}%</Text>
           </View>
 
-          <ScrollView 
+          <ScrollView
             style={styles.logContainer}
             contentContainerStyle={styles.logContent}
           >
@@ -70,7 +74,9 @@ const SyncProgressModal: React.FC<SyncProgressModalProps> = ({ visible, progress
 
           {currentProgress?.status === 'completed' && current === total && (
             <View style={styles.completedContainer}>
-              <Text style={styles.completedText}>✅ Sincronización completa</Text>
+              <Text style={styles.completedText}>
+                ✅ Sincronización completa
+              </Text>
             </View>
           )}
         </View>
@@ -88,7 +94,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   container: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.surface,
     borderRadius: 16,
     padding: 24,
     width: '100%',
@@ -103,7 +109,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textPrimary,
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -112,33 +118,33 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 16,
-    color: '#666',
+    color: COLORS.textSecondary,
     textAlign: 'center',
     marginBottom: 12,
     fontWeight: '600',
   },
   progressBarContainer: {
     height: 8,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: COLORS.border,
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8,
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#1976D2',
+    backgroundColor: COLORS.primary,
     borderRadius: 4,
   },
   percentageText: {
     fontSize: 14,
-    color: '#1976D2',
+    color: COLORS.primary,
     textAlign: 'center',
     fontWeight: 'bold',
   },
   logContainer: {
     maxHeight: 300,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: COLORS.border,
     paddingTop: 12,
   },
   logContent: {
@@ -156,16 +162,16 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginTop: 6,
     marginRight: 12,
-    backgroundColor: '#999',
+    backgroundColor: COLORS.muted,
   },
   statusCompleted: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORS.success,
   },
   statusError: {
-    backgroundColor: '#F44336',
+    backgroundColor: COLORS.error,
   },
   statusSyncing: {
-    backgroundColor: '#FF9800',
+    backgroundColor: COLORS.warning,
   },
   logTextContainer: {
     flex: 1,
@@ -173,12 +179,12 @@ const styles = StyleSheet.create({
   logEntity: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: COLORS.textPrimary,
     marginBottom: 2,
   },
   logMessage: {
     fontSize: 12,
-    color: '#666',
+    color: COLORS.textSecondary,
   },
   completedContainer: {
     marginTop: 16,
@@ -189,7 +195,7 @@ const styles = StyleSheet.create({
   completedText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#4CAF50',
+    color: COLORS.success,
     textAlign: 'center',
   },
 });

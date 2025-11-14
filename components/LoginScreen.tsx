@@ -11,6 +11,7 @@ import {
 import AuthService from '../services/AuthService';
 import FullSyncService, { SyncProgress } from '../services/FullSyncService';
 import SyncProgressModal from './SyncProgressModal';
+import { APP_NAME, COLORS } from '../theme/theme';
 
 export default function LoginScreen({ navigation }: any) {
   const [usuario, setUsuario] = useState('');
@@ -40,19 +41,19 @@ export default function LoginScreen({ navigation }: any) {
     setLoading(true);
     try {
       await AuthService.login(usuario.trim(), password.trim());
-      
+
       // Iniciar sincronización después del login exitoso
       setLoading(false);
       setSyncing(true);
       setSyncProgress([]);
-      
+
       await FullSyncService.syncAll(1, (progress: SyncProgress) => {
         setSyncProgress(prev => [...prev, progress]);
       });
-      
-      // Esperar un momento para que el usuario vea que completó
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 1500));
-      
+
+      // Mantener el modal visible 2 segundos después de terminar
+      await new Promise<void>(resolve => setTimeout(resolve, 2000));
+
       setSyncing(false);
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch (err: any) {
@@ -66,6 +67,7 @@ export default function LoginScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.appName}>{APP_NAME}</Text>
       <Text style={styles.title}>Inicio de Sesión</Text>
 
       <TextInput
@@ -115,25 +117,33 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 24,
     justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
+  },
+  appName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
+    color: COLORS.primary,
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 24,
     textAlign: 'center',
+    color: COLORS.textPrimary,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.surface,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: COLORS.border,
     marginBottom: 12,
   },
   button: {
-    backgroundColor: '#1976D2',
+    backgroundColor: COLORS.primary,
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
@@ -150,7 +160,7 @@ const styles = StyleSheet.create({
   note: {
     marginTop: 16,
     fontSize: 12,
-    color: '#666',
+    color: COLORS.textSecondary,
     textAlign: 'center',
   },
 });

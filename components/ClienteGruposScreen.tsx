@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import SyncService from '../services/SyncService';
+import { COLORS } from '../theme/theme';
 
 type ClienteGrupo = {
   idGrupo: number;
@@ -63,7 +64,7 @@ export default function ClienteGruposScreen() {
         await loadGrupos();
         Alert.alert(
           '✅ Sincronización completada',
-          'Sincronización exitosa. Recarga los grupos para ver cambios.'
+          'Sincronización exitosa. Recarga los grupos para ver cambios.',
         );
       } else {
         const message =
@@ -83,7 +84,9 @@ export default function ClienteGruposScreen() {
   useEffect(() => {
     loadGrupos();
     const unsubscribe = SyncService.onClienteGrupoChange(() => {
-      console.log('🔂 Evento de cambio en ClienteGrupo recibido, recargando datos');
+      console.log(
+        '🔂 Evento de cambio en ClienteGrupo recibido, recargando datos',
+      );
       loadGrupos();
     });
 
@@ -190,7 +193,7 @@ export default function ClienteGruposScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
     padding: 16,
   },
   header: {
@@ -199,17 +202,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#0D47A1',
+    color: COLORS.primaryDark,
   },
   subtitle: {
     fontSize: 14,
-    color: '#546E7A',
+    color: COLORS.textSecondary,
     marginTop: 4,
   },
   statsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.surface,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -225,22 +228,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statLabel: {
-    color: '#607D8B',
+    color: COLORS.textSecondary,
     fontSize: 13,
   },
   statValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0D47A1',
+    color: COLORS.primaryDark,
     marginTop: 4,
   },
   statDivider: {
     width: 1,
     height: '80%',
-    backgroundColor: '#E0E0E0',
+    backgroundColor: COLORS.border,
   },
   syncButton: {
-    backgroundColor: '#1565C0',
+    backgroundColor: COLORS.primary,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
@@ -258,7 +261,7 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#E3F2FD',
+    backgroundColor: COLORS.primaryLight,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderTopLeftRadius: 12,
@@ -267,14 +270,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#BBDEFB',
   },
   th: {
-    color: '#0D47A1',
+    color: COLORS.primaryDark,
     fontWeight: '700',
     fontSize: 13,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.surface,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
@@ -282,7 +285,7 @@ const styles = StyleSheet.create({
   },
   td: {
     fontSize: 13,
-    color: '#37474F',
+    color: COLORS.textPrimary,
   },
   badge: {
     flex: 1,

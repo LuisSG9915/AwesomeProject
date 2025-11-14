@@ -25,7 +25,16 @@ class FullSyncService {
       this.realm = await Realm.open({
         path: 'FullSyncDB',
         schema: ALL_SCHEMAS,
-        schemaVersion: 1,
+        schemaVersion: 3,
+        onMigration: (oldRealm: Realm, newRealm: Realm) => {
+          const newCartera = newRealm.objects('Cartera');
+          for (let i = 0; i < newCartera.length; i++) {
+            const obj: any = newCartera[i];
+            if (typeof obj.cobrado === 'undefined') {
+              obj.cobrado = false;
+            }
+          }
+        },
       });
 
       this.isInitialized = true;
@@ -144,9 +153,13 @@ class FullSyncService {
         throw new Error('Respuesta inválida del servidor');
       }
 
+      const localIdThreshold = Date.now();
+
       this.realm!.write(() => {
-        // Limpiar ventas anteriores de esta sucursal
-        const existingVentas = this.realm!.objects('Venta').filtered('sucursal == $0', sucursal);
+        // Limpiar ventas anteriores de esta sucursal (solo ids "normales")
+        const existingVentas = this.realm!
+          .objects('Venta')
+          .filtered('sucursal == $0 AND id <= $1', sucursal, localIdThreshold);
         this.realm!.delete(existingVentas);
 
         // Insertar nuevas ventas
@@ -311,26 +324,46 @@ class FullSyncService {
 
   private async syncInventario(
     sucursal: number,
-    fechaMovto: string = new Date().toISOString().split('T')[0]
+    fechaMovto?: string,
   ): Promise<{ success: boolean; error?: string; count?: number }> {
     try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${fechaMovto}`
-      );
+      // Si no se proporciona fecha, usar fecha LOCAL (YYYY-MM-DD) del dispositivo
+      const effectiveFechaMovto = fechaMovto ?? (() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      })();
 
+      const response = await fetch(
+        `${this.apiBaseUrl}/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${effectiveFechaMovto}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-
+      
       const data = await response.json();
-
+      
+      console.log(data);
       if (!Array.isArray(data)) {
         throw new Error('Respuesta inválida del servidor');
       }
 
+      const localIdThreshold = Date.now();
+      const unsyncedSentinel = new Date(0);
+
       this.realm!.write(() => {
-        // Limpiar inventario anterior de esta sucursal
-        const existingInventario = this.realm!.objects('Inventario').filtered('sucursal == $0', sucursal);
+        // Limpiar inventario anterior de TODAS las sucursales.
+        // Se borran:
+        // - Todos los registros con id "normal" (<= Date.now()).
+        // - Cualquier registro ya sincronizado (syncedAt != fecha centinela),
+        //   incluso si su id es mayor a Date.now().
+        // Se conservan únicamente los movimientos locales no sincronizados
+        // (id > Date.now() y syncedAt == new Date(0)).
+        const existingInventario = this.realm!
+          .objects('Inventario')
+          .filtered('id <= $0 OR syncedAt != $1', localIdThreshold, unsyncedSentinel);
         this.realm!.delete(existingInventario);
 
         // Insertar nuevo inventario
@@ -341,6 +374,7 @@ class FullSyncService {
             claveProd: inventario.claveProd,
             fechaArrastre: inventario.fechaArrastre ? new Date(inventario.fechaArrastre) : null,
             saldo: inventario.saldo,
+            descripcion: inventario.descripcion ?? null,
             syncedAt: new Date(),
           });
         });
@@ -465,9 +499,180 @@ class FullSyncService {
     return Array.from(this.realm.objects('Venta').sorted('fecha', true).slice(0, limit));
   }
 
+  getVentasPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Venta').sorted('fecha', true).slice(offset, offset + limit));
+  }
+
+  /**
+   * Crea ventas locales en Realm (una fila por producto de la venta).
+   * Se usa para registrar ventas hechas en el punto de venta antes de sincronizar.
+   */
+  async createLocalVentas(
+    ventas: {
+      id: number;
+      sucursal?: number | null;
+      noVenta?: number | null;
+      claveProd?: number | null;
+      nombreProducto?: string | null;
+      cantProducto?: number | null;
+      precio?: number | null;
+      importe?: number | null;
+      cveCliente?: number | null;
+      nombreCliente?: string | null;
+      fecha?: Date | null;
+      tipoPago?: number | null;
+      descripcionMedioPago?: string | null;
+      vendedor?: string | null;
+      folioFactura?: boolean | null;
+      facturacionMovil?: boolean | null;
+    }[],
+  ): Promise<void> {
+    if (!ventas.length) return;
+
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return;
+
+    this.realm.write(() => {
+      ventas.forEach(v => {
+        this.realm!.create('Venta', {
+          id: v.id,
+          sucursal: v.sucursal ?? null,
+          noVenta: v.noVenta ?? null,
+          claveProd: v.claveProd ?? null,
+          nombreProducto: v.nombreProducto ?? null,
+          cantProducto: v.cantProducto ?? null,
+          precio: v.precio ?? null,
+          importe: v.importe ?? null,
+          cveCliente: v.cveCliente ?? null,
+          nombreCliente: v.nombreCliente ?? null,
+          fecha: v.fecha ?? new Date(),
+          tipoPago: v.tipoPago ?? null,
+          descripcionMedioPago: v.descripcionMedioPago ?? null,
+          vendedor: v.vendedor ?? null,
+          folioFactura: v.folioFactura ?? false,
+          facturacionMovil: v.facturacionMovil ?? false,
+          // Fecha centinela para indicar que aún no se sincroniza
+          syncedAt: new Date(0),
+        });
+      });
+    });
+  }
+
+  /**
+   * Crea movimientos locales en Inventario (por ejemplo, recepción de traspasos).
+   */
+  async createLocalInventarioMovements(
+    movimientos: {
+      id: number;
+      sucursal?: number | null;
+      claveProd?: number | null;
+      saldo: number;
+      fechaArrastre?: Date | null;
+    }[],
+  ): Promise<void> {
+    if (!movimientos.length) return;
+
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return;
+
+    this.realm.write(() => {
+      movimientos.forEach(m => {
+        const idValue = Number(m.id);
+        const sucursalValue =
+          m.sucursal === null || m.sucursal === undefined
+            ? null
+            : Number(m.sucursal);
+        const claveProdValue =
+          m.claveProd === null || m.claveProd === undefined
+            ? null
+            : Number(m.claveProd);
+
+        this.realm!.create('Inventario', {
+          id: idValue,
+          sucursal: sucursalValue,
+          claveProd: claveProdValue,
+          fechaArrastre: m.fechaArrastre ?? new Date(),
+          saldo: m.saldo,
+          // Fecha centinela para indicar que aún no se sincroniza
+          syncedAt: new Date(0),
+        });
+      });
+    });
+  }
+
+  /**
+   * Crea movimientos locales en Cartera (por ejemplo, pagos registrados en Cobranza).
+   */
+  async createLocalCarteraMovements(
+    movimientos: {
+      id: number;
+      idCliente?: number | null;
+      nombreCliente?: string | null;
+      sucursal?: number | null;
+      sucursalSegmento?: number | null;
+      saldo: number;
+      fecha?: Date | null;
+      idSegmento?: number | null;
+      noVenta?: number | null;
+    }[],
+  ): Promise<void> {
+    if (!movimientos.length) return;
+
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return;
+
+    this.realm.write(() => {
+      movimientos.forEach(m => {
+        this.realm!.create('Cartera', {
+          id: m.id,
+          idCliente: m.idCliente ?? null,
+          nombreCliente: m.nombreCliente ?? null,
+          sucursal: m.sucursal ?? null,
+          sucursalSegmento: m.sucursalSegmento ?? null,
+          saldo: m.saldo,
+          fecha: m.fecha ?? new Date(),
+          idSegmento: m.idSegmento ?? null,
+          noVenta: m.noVenta ?? null,
+          // Fecha centinela para indicar que aún no se sincroniza
+          syncedAt: new Date(0),
+        });
+      });
+    });
+  }
+
+  async markCarteraAsPaid(ids: number[]): Promise<void> {
+    if (!ids.length) return;
+
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return;
+
+    this.realm.write(() => {
+      ids.forEach(id => {
+        const row: any = this.realm!.objectForPrimaryKey('Cartera', id);
+        if (row) {
+          row.cobrado = true;
+        }
+      });
+    });
+  }
+
   getUsuarios(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
     return Array.from(this.realm.objects('Usuario').sorted('nombre').slice(0, limit));
+  }
+
+  getUsuariosPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Usuario').sorted('nombre').slice(offset, offset + limit));
   }
 
   getProductos(limit: number = 100): any[] {
@@ -475,9 +680,19 @@ class FullSyncService {
     return Array.from(this.realm.objects('Producto').sorted('descripcion').slice(0, limit));
   }
 
+  getProductosPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Producto').sorted('descripcion').slice(offset, offset + limit));
+  }
+
   getPrecios(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
     return Array.from(this.realm.objects('Precio').sorted('descripcion').slice(0, limit));
+  }
+
+  getPreciosPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Precio').sorted('descripcion').slice(offset, offset + limit));
   }
 
   getInventario(limit: number = 100): any[] {
@@ -485,14 +700,78 @@ class FullSyncService {
     return Array.from(this.realm.objects('Inventario').slice(0, limit));
   }
 
+  getInventarioPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Inventario').slice(offset, offset + limit));
+  }
+
   getCartera(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
     return Array.from(this.realm.objects('Cartera').sorted('nombreCliente').slice(0, limit));
   }
 
+  getCarteraPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Cartera').sorted('nombreCliente').slice(offset, offset + limit));
+  }
+
+  getVentasTotalEfectivoForDate(date: Date): number {
+    if (!this.isInitialized || !this.realm) return 0;
+
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+    console.log(Array.from(this.realm.objects('Venta').filtered('id > 1700000000')));
+    const ventas = this.realm
+      .objects('Venta')
+      .filtered('fecha >= $0 AND fecha <= $1 AND tipoPago == 1', start, end);
+
+    let total = 0;
+    for (let i = 0; i < ventas.length; i++) {
+      const v: any = ventas[i];
+      total += v.importe || 0;
+    }
+    return total;
+  }
+// {
+//     "id": 1763078957601044,
+//     "sucursal": 44,
+//     "noVenta": 1763078957601044,
+//     "claveProd": 2,
+//     "nombreProducto": "Bolsa 5Kg",
+//     "cantProducto": 1,
+//     "precio": 25,
+//     "importe": 25,
+//     "cveCliente": 942,
+//     "nombreCliente": "001 ABARROTES FASTI SAN JOSE",
+//     "fecha": "2025-11-14T00:09:17.601Z",
+//     "tipoPago": 1,
+//     "descripcionMedioPago": "Efectivo",
+//     "vendedor": "CBERP14",
+//     "folioFactura": false,
+//     "facturacionMovil": false,
+//     "syncedAt": "1970-01-01T00:00:00.000Z"
+// }
   getClientesFull(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
     return Array.from(this.realm.objects('ClienteFull').sorted('nombre').slice(0, limit));
+  }
+
+  getClientesFullPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('ClienteFull').sorted('nombre').slice(offset, offset + limit));
+  }
+
+  getClienteFullById(idCliente: number): any | null {
+    if (!this.isInitialized || !this.realm) return null;
+    const obj = this.realm.objectForPrimaryKey('ClienteFull', idCliente);
+    return obj || null;
+  }
+
+  getPreciosByCliente(idCliente: number): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(this.realm.objects('Precio').filtered('idCliente == $0', idCliente));
   }
 
   getSyncStatus(entity: string = 'all'): any {

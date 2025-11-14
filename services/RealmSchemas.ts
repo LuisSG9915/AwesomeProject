@@ -76,6 +76,7 @@ export const InventarioSchema = {
     claveProd: 'int?',
     fechaArrastre: 'date?',
     saldo: 'float?',
+    descripcion: 'string?',
     syncedAt: 'date'
   },
   primaryKey: 'id'
@@ -93,6 +94,7 @@ export const CarteraSchema = {
     fecha: 'date?',
     idSegmento: 'int?',
     noVenta: 'int?',
+    cobrado: 'bool?',
     syncedAt: 'date'
   },
   primaryKey: 'id'

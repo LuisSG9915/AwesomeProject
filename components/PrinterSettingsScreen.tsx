@@ -11,6 +11,7 @@ import {
 import BluetoothPrinterService, {
   PrinterDevice,
 } from '../services/BluetoothPrinterService';
+import { COLORS } from '../theme/theme';
 
 export default function PrinterSettingsScreen() {
   const [printers, setPrinters] = useState<PrinterDevice[]>([]);
@@ -69,10 +70,7 @@ export default function PrinterSettingsScreen() {
       if (success) {
         setIsConnected(true);
         setCurrentPrinter(printer);
-        Alert.alert(
-          '✅ Conectado',
-          `Conectado exitosamente a ${printer.name}`,
-        );
+        Alert.alert('✅ Conectado', `Conectado exitosamente a ${printer.name}`);
       }
     } catch (error) {
       Alert.alert('Error', 'No se pudo conectar a la impresora');
@@ -82,22 +80,18 @@ export default function PrinterSettingsScreen() {
   };
 
   const handleDisconnect = async () => {
-    Alert.alert(
-      'Desconectar',
-      '¿Deseas desconectar la impresora actual?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Desconectar',
-          style: 'destructive',
-          onPress: async () => {
-            await BluetoothPrinterService.disconnect();
-            setIsConnected(false);
-            setCurrentPrinter(null);
-          },
+    Alert.alert('Desconectar', '¿Deseas desconectar la impresora actual?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Desconectar',
+        style: 'destructive',
+        onPress: async () => {
+          await BluetoothPrinterService.disconnect();
+          setIsConnected(false);
+          setCurrentPrinter(null);
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleTestPrint = async () => {
@@ -167,9 +161,7 @@ export default function PrinterSettingsScreen() {
                     style={styles.disconnectButton}
                     onPress={handleDisconnect}
                   >
-                    <Text style={styles.disconnectButtonText}>
-                      Desconectar
-                    </Text>
+                    <Text style={styles.disconnectButtonText}>Desconectar</Text>
                   </TouchableOpacity>
                 </>
               ) : (
@@ -192,7 +184,9 @@ export default function PrinterSettingsScreen() {
                 style={styles.clearButton}
                 onPress={handleClearSaved}
               >
-                <Text style={styles.clearButtonText}>🗑️ Eliminar Impresora</Text>
+                <Text style={styles.clearButtonText}>
+                  🗑️ Eliminar Impresora
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -217,9 +211,7 @@ export default function PrinterSettingsScreen() {
           {scanning ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.scanButtonText}>
-              🔍 Escanear Dispositivos
-            </Text>
+            <Text style={styles.scanButtonText}>🔍 Escanear Dispositivos</Text>
           )}
         </TouchableOpacity>
 
@@ -244,7 +236,9 @@ export default function PrinterSettingsScreen() {
                 >
                   <View style={styles.printerItemContent}>
                     <Text style={styles.printerItemName}>🖨️ {item.name}</Text>
-                    <Text style={styles.printerItemAddress}>{item.address}</Text>
+                    <Text style={styles.printerItemAddress}>
+                      {item.address}
+                    </Text>
                   </View>
                   {currentPrinter?.address === item.address && isConnected && (
                     <View style={styles.connectedBadge}>
@@ -278,21 +272,22 @@ export default function PrinterSettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.background,
     padding: 16,
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 16,
+    color: COLORS.textPrimary,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: COLORS.border,
   },
   statusRow: {
     flexDirection: 'row',
@@ -303,6 +298,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
+    color: COLORS.textPrimary,
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -310,10 +306,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   statusConnected: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORS.success,
   },
   statusDisconnected: {
-    backgroundColor: '#F44336',
+    backgroundColor: COLORS.error,
   },
   statusText: {
     color: '#fff',
@@ -321,13 +317,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   printerInfo: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: COLORS.background,
     padding: 12,
     borderRadius: 8,
   },
   printerLabel: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textSecondary,
     marginBottom: 4,
   },
   printerName: {
@@ -337,7 +333,7 @@ const styles = StyleSheet.create({
   },
   printerAddress: {
     fontSize: 13,
-    color: '#999',
+    color: COLORS.muted,
     marginBottom: 12,
   },
   buttonRow: {
@@ -347,7 +343,7 @@ const styles = StyleSheet.create({
   },
   testButton: {
     flex: 1,
-    backgroundColor: '#2196F3',
+    backgroundColor: COLORS.primary,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
@@ -358,7 +354,7 @@ const styles = StyleSheet.create({
   },
   disconnectButton: {
     flex: 1,
-    backgroundColor: '#F44336',
+    backgroundColor: COLORS.error,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
@@ -368,7 +364,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   connectButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORS.success,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
@@ -389,13 +385,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   noPrinter: {
-    color: '#999',
+    color: COLORS.muted,
     fontStyle: 'italic',
     textAlign: 'center',
     paddingVertical: 20,
   },
   scanButton: {
-    backgroundColor: '#1976D2',
+    backgroundColor: COLORS.primary,
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
@@ -408,7 +404,7 @@ const styles = StyleSheet.create({
   },
   scanningText: {
     textAlign: 'center',
-    color: '#1976D2',
+    color: COLORS.primary,
     marginTop: 12,
     fontStyle: 'italic',
   },
@@ -421,7 +417,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   printerItem: {
-    backgroundColor: '#F9F9F9',
+    backgroundColor: COLORS.surface,
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
@@ -429,7 +425,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: COLORS.border,
   },
   printerItemContent: {
     flex: 1,
@@ -441,10 +437,10 @@ const styles = StyleSheet.create({
   },
   printerItemAddress: {
     fontSize: 12,
-    color: '#999',
+    color: COLORS.muted,
   },
   connectedBadge: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: COLORS.success,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -455,21 +451,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   infoCard: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: COLORS.primaryLight,
     borderRadius: 10,
     padding: 16,
     borderLeftWidth: 4,
-    borderLeftColor: '#2196F3',
+    borderLeftColor: COLORS.primary,
   },
   infoTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1976D2',
+    color: COLORS.primary,
     marginBottom: 8,
   },
   infoText: {
     fontSize: 14,
-    color: '#0D47A1',
+    color: COLORS.primaryDark,
     marginBottom: 4,
   },
 });
