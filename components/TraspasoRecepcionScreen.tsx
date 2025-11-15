@@ -16,7 +16,7 @@ import FullSyncService from '../services/FullSyncService';
 import AuthService, { Usuario } from '../services/AuthService';
 import { COLORS } from '../theme/theme';
 
-type Sucursal = { id_sucursal: number; nombre: string; grupo: number };
+type Sucursal = { id_sucursal: number; nombre: string };
 
 type Traspaso = {
   id: number;
@@ -47,11 +47,7 @@ export default function TraspasoRecepcionScreen() {
   const [fecha2, setFecha2] = useState<Date>(today);
   const [showPicker1, setShowPicker1] = useState(false);
   const [showPicker2, setShowPicker2] = useState(false);
-  const [sucursales] = useState<Sucursal[]>([
-    { id_sucursal: 1, nombre: 'Sucursal Centro', grupo: 1 },
-    { id_sucursal: 2, nombre: 'Sucursal Norte', grupo: 1 },
-    { id_sucursal: 3, nombre: 'Sucursal Sur', grupo: 2 },
-  ]);
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
 
   const [traspasos, setTraspasos] = useState<Traspaso[]>([
     {
@@ -90,7 +86,7 @@ export default function TraspasoRecepcionScreen() {
   const [selected, setSelected] = useState<Traspaso | null>(null);
 
   useEffect(() => {
-    const loadUser = async () => {
+    const loadData = async () => {
       const user = await AuthService.restoreSession();
       if (user) {
         setCurrentUser(user);
@@ -100,9 +96,22 @@ export default function TraspasoRecepcionScreen() {
           1;
         setCurrentSucursal(sucursal);
       }
+
+      try {
+        const apiSucursales = await FullSyncService.getSucursales();
+        setSucursales(
+          apiSucursales.map(s => ({
+            id_sucursal: s.id,
+            nombre: s.nombre,
+          })),
+        );
+      } catch (error) {
+        console.error('Error al cargar sucursales:', error);
+        Alert.alert('Error', 'No se pudieron cargar las sucursales');
+      }
     };
 
-    loadUser();
+    loadData();
   }, []);
 
   const formatDate = (date: Date): string => {

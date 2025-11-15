@@ -47,7 +47,7 @@ class FullSyncService {
 
   async syncAll(
     sucursal: number = 1,
-    onProgress?: SyncProgressCallback
+    onProgress?: SyncProgressCallback,
   ): Promise<{ success: boolean; error?: string }> {
     if (!this.isInitialized) {
       await this.initialize();
@@ -69,7 +69,7 @@ class FullSyncService {
     try {
       for (const task of syncTasks) {
         current++;
-        
+
         if (onProgress) {
           onProgress({
             current,
@@ -81,7 +81,7 @@ class FullSyncService {
         }
 
         const result = await task.fn();
-        
+
         if (!result.success) {
           if (onProgress) {
             onProgress({
@@ -100,7 +100,9 @@ class FullSyncService {
               total,
               entity: task.name,
               status: 'completed',
-              message: `${task.name} sincronizado (${result.count || 0} registros)`,
+              message: `${task.name} sincronizado (${
+                result.count || 0
+              } registros)`,
             });
           }
         }
@@ -122,7 +124,7 @@ class FullSyncService {
       return { success: true };
     } catch (error: any) {
       console.error('❌ Error durante la sincronización completa:', error);
-      
+
       if (onProgress) {
         onProgress({
           current,
@@ -137,10 +139,12 @@ class FullSyncService {
     }
   }
 
-  private async syncVentas(sucursal: number): Promise<{ success: boolean; error?: string; count?: number }> {
+  private async syncVentas(
+    sucursal: number,
+  ): Promise<{ success: boolean; error?: string; count?: number }> {
     try {
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/ventas-full/${sucursal}`
+        `${this.apiBaseUrl}/api/MovilesVentas/ventas-full/${sucursal}`,
       );
 
       if (!response.ok) {
@@ -157,9 +161,11 @@ class FullSyncService {
 
       this.realm!.write(() => {
         // Limpiar ventas anteriores de esta sucursal (solo ids "normales")
-        const existingVentas = this.realm!
-          .objects('Venta')
-          .filtered('sucursal == $0 AND id <= $1', sucursal, localIdThreshold);
+        const existingVentas = this.realm!.objects('Venta').filtered(
+          'sucursal == $0 AND id <= $1',
+          sucursal,
+          localIdThreshold,
+        );
         this.realm!.delete(existingVentas);
 
         // Insertar nuevas ventas
@@ -194,10 +200,14 @@ class FullSyncService {
     }
   }
 
-  private async syncUsuarios(): Promise<{ success: boolean; error?: string; count?: number }> {
+  private async syncUsuarios(): Promise<{
+    success: boolean;
+    error?: string;
+    count?: number;
+  }> {
     try {
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/usuarios-full`
+        `${this.apiBaseUrl}/api/MovilesVentas/usuarios-full`,
       );
 
       if (!response.ok) {
@@ -226,7 +236,7 @@ class FullSyncService {
               sucursalOrigen: usuario.sucursalOrigen,
               syncedAt: new Date(),
             },
-            UpdateMode.Modified
+            UpdateMode.Modified,
           );
         });
       });
@@ -239,10 +249,14 @@ class FullSyncService {
     }
   }
 
-  private async syncProductos(): Promise<{ success: boolean; error?: string; count?: number }> {
+  private async syncProductos(): Promise<{
+    success: boolean;
+    error?: string;
+    count?: number;
+  }> {
     try {
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/productos-full`
+        `${this.apiBaseUrl}/api/MovilesVentas/productos-full`,
       );
 
       if (!response.ok) {
@@ -267,7 +281,7 @@ class FullSyncService {
               fechaAct: producto.fechaAct ? new Date(producto.fechaAct) : null,
               syncedAt: new Date(),
             },
-            UpdateMode.Modified
+            UpdateMode.Modified,
           );
         });
       });
@@ -280,10 +294,14 @@ class FullSyncService {
     }
   }
 
-  private async syncPrecios(): Promise<{ success: boolean; error?: string; count?: number }> {
+  private async syncPrecios(): Promise<{
+    success: boolean;
+    error?: string;
+    count?: number;
+  }> {
     try {
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/precios-full`
+        `${this.apiBaseUrl}/api/MovilesVentas/precios-full`,
       );
 
       if (!response.ok) {
@@ -309,7 +327,7 @@ class FullSyncService {
               fechaAct: precio.fechaAct ? new Date(precio.fechaAct) : null,
               syncedAt: new Date(),
             },
-            UpdateMode.Modified
+            UpdateMode.Modified,
           );
         });
       });
@@ -328,23 +346,25 @@ class FullSyncService {
   ): Promise<{ success: boolean; error?: string; count?: number }> {
     try {
       // Si no se proporciona fecha, usar fecha LOCAL (YYYY-MM-DD) del dispositivo
-      const effectiveFechaMovto = fechaMovto ?? (() => {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-      })();
+      const effectiveFechaMovto =
+        fechaMovto ??
+        (() => {
+          const now = new Date();
+          const yyyy = now.getFullYear();
+          const mm = String(now.getMonth() + 1).padStart(2, '0');
+          const dd = String(now.getDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        })();
 
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${effectiveFechaMovto}`
+        `${this.apiBaseUrl}/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${effectiveFechaMovto}`,
       );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       console.log(data);
       if (!Array.isArray(data)) {
         throw new Error('Respuesta inválida del servidor');
@@ -361,9 +381,11 @@ class FullSyncService {
         //   incluso si su id es mayor a Date.now().
         // Se conservan únicamente los movimientos locales no sincronizados
         // (id > Date.now() y syncedAt == new Date(0)).
-        const existingInventario = this.realm!
-          .objects('Inventario')
-          .filtered('id <= $0 OR syncedAt != $1', localIdThreshold, unsyncedSentinel);
+        const existingInventario = this.realm!.objects('Inventario').filtered(
+          'id <= $0 OR syncedAt != $1',
+          localIdThreshold,
+          unsyncedSentinel,
+        );
         this.realm!.delete(existingInventario);
 
         // Insertar nuevo inventario
@@ -372,7 +394,9 @@ class FullSyncService {
             id: inventario.id,
             sucursal: inventario.sucursal,
             claveProd: inventario.claveProd,
-            fechaArrastre: inventario.fechaArrastre ? new Date(inventario.fechaArrastre) : null,
+            fechaArrastre: inventario.fechaArrastre
+              ? new Date(inventario.fechaArrastre)
+              : null,
             saldo: inventario.saldo,
             descripcion: inventario.descripcion ?? null,
             syncedAt: new Date(),
@@ -388,10 +412,14 @@ class FullSyncService {
     }
   }
 
-  private async syncCartera(): Promise<{ success: boolean; error?: string; count?: number }> {
+  private async syncCartera(): Promise<{
+    success: boolean;
+    error?: string;
+    count?: number;
+  }> {
     try {
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/cartera-full`
+        `${this.apiBaseUrl}/api/MovilesVentas/cartera-full`,
       );
 
       if (!response.ok) {
@@ -420,7 +448,7 @@ class FullSyncService {
               noVenta: cartera.noVenta,
               syncedAt: new Date(),
             },
-            UpdateMode.Modified
+            UpdateMode.Modified,
           );
         });
       });
@@ -433,10 +461,14 @@ class FullSyncService {
     }
   }
 
-  private async syncClientesFull(): Promise<{ success: boolean; error?: string; count?: number }> {
+  private async syncClientesFull(): Promise<{
+    success: boolean;
+    error?: string;
+    count?: number;
+  }> {
     try {
       const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/clientes-full`
+        `${this.apiBaseUrl}/api/MovilesVentas/clientes-full`,
       );
 
       if (!response.ok) {
@@ -464,7 +496,7 @@ class FullSyncService {
               fechaAct: cliente.fechaAct ? new Date(cliente.fechaAct) : null,
               syncedAt: new Date(),
             },
-            UpdateMode.Modified
+            UpdateMode.Modified,
           );
         });
       });
@@ -488,20 +520,53 @@ class FullSyncService {
           lastSyncDate: new Date(),
           status: success ? 'completed' : 'failed',
         },
-        UpdateMode.Modified
+        UpdateMode.Modified,
       );
     });
+  }
+
+  async getSucursales(): Promise<{ id: number; nombre: string }[]> {
+    try {
+      const response = await fetch(
+        `${this.apiBaseUrl}/api/MovilesVentas/sucursales`,
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!Array.isArray(data)) {
+        throw new Error('Respuesta inválida del servidor');
+      }
+
+      return data.map((item: any) => ({
+        id: Number(item.id),
+        nombre: String(item.nombre),
+      }));
+    } catch (error: any) {
+      console.error('❌ Error al obtener sucursales:', error);
+      throw error;
+    }
   }
 
   // Métodos para consultar datos
   getVentas(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Venta').sorted('fecha', true).slice(0, limit));
+    return Array.from(
+      this.realm.objects('Venta').sorted('fecha', true).slice(0, limit),
+    );
   }
 
   getVentasPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Venta').sorted('fecha', true).slice(offset, offset + limit));
+    return Array.from(
+      this.realm
+        .objects('Venta')
+        .sorted('fecha', true)
+        .slice(offset, offset + limit),
+    );
   }
 
   /**
@@ -667,32 +732,53 @@ class FullSyncService {
 
   getUsuarios(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Usuario').sorted('nombre').slice(0, limit));
+    return Array.from(
+      this.realm.objects('Usuario').sorted('nombre').slice(0, limit),
+    );
   }
 
   getUsuariosPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Usuario').sorted('nombre').slice(offset, offset + limit));
+    return Array.from(
+      this.realm
+        .objects('Usuario')
+        .sorted('nombre')
+        .slice(offset, offset + limit),
+    );
   }
 
   getProductos(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Producto').sorted('descripcion').slice(0, limit));
+    return Array.from(
+      this.realm.objects('Producto').sorted('descripcion').slice(0, limit),
+    );
   }
 
   getProductosPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Producto').sorted('descripcion').slice(offset, offset + limit));
+    return Array.from(
+      this.realm
+        .objects('Producto')
+        .sorted('descripcion')
+        .slice(offset, offset + limit),
+    );
   }
 
   getPrecios(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Precio').sorted('descripcion').slice(0, limit));
+    return Array.from(
+      this.realm.objects('Precio').sorted('descripcion').slice(0, limit),
+    );
   }
 
   getPreciosPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Precio').sorted('descripcion').slice(offset, offset + limit));
+    return Array.from(
+      this.realm
+        .objects('Precio')
+        .sorted('descripcion')
+        .slice(offset, offset + limit),
+    );
   }
 
   getInventario(limit: number = 100): any[] {
@@ -702,17 +788,26 @@ class FullSyncService {
 
   getInventarioPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Inventario').slice(offset, offset + limit));
+    return Array.from(
+      this.realm.objects('Inventario').slice(offset, offset + limit),
+    );
   }
 
   getCartera(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Cartera').sorted('nombreCliente').slice(0, limit));
+    return Array.from(
+      this.realm.objects('Cartera').sorted('nombreCliente').slice(0, limit),
+    );
   }
 
   getCarteraPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Cartera').sorted('nombreCliente').slice(offset, offset + limit));
+    return Array.from(
+      this.realm
+        .objects('Cartera')
+        .sorted('nombreCliente')
+        .slice(offset, offset + limit),
+    );
   }
 
   getVentasTotalEfectivoForDate(date: Date): number {
@@ -722,7 +817,9 @@ class FullSyncService {
     start.setHours(0, 0, 0, 0);
     const end = new Date(date);
     end.setHours(23, 59, 59, 999);
-    console.log(Array.from(this.realm.objects('Venta').filtered('id > 1700000000')));
+    console.log(
+      Array.from(this.realm.objects('Venta').filtered('id > 1700000000')),
+    );
     const ventas = this.realm
       .objects('Venta')
       .filtered('fecha >= $0 AND fecha <= $1 AND tipoPago == 1', start, end);
@@ -734,33 +831,40 @@ class FullSyncService {
     }
     return total;
   }
-// {
-//     "id": 1763078957601044,
-//     "sucursal": 44,
-//     "noVenta": 1763078957601044,
-//     "claveProd": 2,
-//     "nombreProducto": "Bolsa 5Kg",
-//     "cantProducto": 1,
-//     "precio": 25,
-//     "importe": 25,
-//     "cveCliente": 942,
-//     "nombreCliente": "001 ABARROTES FASTI SAN JOSE",
-//     "fecha": "2025-11-14T00:09:17.601Z",
-//     "tipoPago": 1,
-//     "descripcionMedioPago": "Efectivo",
-//     "vendedor": "CBERP14",
-//     "folioFactura": false,
-//     "facturacionMovil": false,
-//     "syncedAt": "1970-01-01T00:00:00.000Z"
-// }
+  // {
+  //     "id": 1763078957601044,
+  //     "sucursal": 44,
+  //     "noVenta": 1763078957601044,
+  //     "claveProd": 2,
+  //     "nombreProducto": "Bolsa 5Kg",
+  //     "cantProducto": 1,
+  //     "precio": 25,
+  //     "importe": 25,
+  //     "cveCliente": 942,
+  //     "nombreCliente": "001 ABARROTES FASTI SAN JOSE",
+  //     "fecha": "2025-11-14T00:09:17.601Z",
+  //     "tipoPago": 1,
+  //     "descripcionMedioPago": "Efectivo",
+  //     "vendedor": "CBERP14",
+  //     "folioFactura": false,
+  //     "facturacionMovil": false,
+  //     "syncedAt": "1970-01-01T00:00:00.000Z"
+  // }
   getClientesFull(limit: number = 100): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('ClienteFull').sorted('nombre').slice(0, limit));
+    return Array.from(
+      this.realm.objects('ClienteFull').sorted('nombre').slice(0, limit),
+    );
   }
 
   getClientesFullPaginated(offset: number = 0, limit: number = 50): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('ClienteFull').sorted('nombre').slice(offset, offset + limit));
+    return Array.from(
+      this.realm
+        .objects('ClienteFull')
+        .sorted('nombre')
+        .slice(offset, offset + limit),
+    );
   }
 
   getClienteFullById(idCliente: number): any | null {
@@ -771,7 +875,9 @@ class FullSyncService {
 
   getPreciosByCliente(idCliente: number): any[] {
     if (!this.isInitialized || !this.realm) return [];
-    return Array.from(this.realm.objects('Precio').filtered('idCliente == $0', idCliente));
+    return Array.from(
+      this.realm.objects('Precio').filtered('idCliente == $0', idCliente),
+    );
   }
 
   getSyncStatus(entity: string = 'all'): any {

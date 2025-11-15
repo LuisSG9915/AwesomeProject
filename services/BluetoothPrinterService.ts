@@ -97,7 +97,10 @@ class BluetoothPrinterService {
       try {
         parsed = typeof devices === 'string' ? JSON.parse(devices) : devices;
       } catch (parseError) {
-        console.warn('No se pudo parsear respuesta de scanDevices:', parseError);
+        console.warn(
+          'No se pudo parsear respuesta de scanDevices:',
+          parseError,
+        );
         parsed = devices;
       }
 
@@ -105,10 +108,7 @@ class BluetoothPrinterService {
       if (Array.isArray(parsed)) {
         deviceList = parsed;
       } else if (parsed && (parsed.found || parsed.paired)) {
-        deviceList = [
-          ...(parsed.found || []),
-          ...(parsed.paired || []),
-        ];
+        deviceList = [...(parsed.found || []), ...(parsed.paired || [])];
       }
 
       // Asegurar dispositivos únicos por address
@@ -131,7 +131,8 @@ class BluetoothPrinterService {
             name.includes('THERMAL') ||
             name.includes('POS') ||
             name.includes('RP') ||
-            name.includes('BT')
+            name.includes('BT') ||
+            name.includes('EC MP')
           );
         })
         .map((device: any) => ({
@@ -152,6 +153,22 @@ class BluetoothPrinterService {
    */
   async connectToPrinter(printer: PrinterDevice): Promise<boolean> {
     try {
+      const isEnabled = await this.enableBluetooth();
+      if (!isEnabled) {
+        Alert.alert('Bluetooth', 'Por favor activa el Bluetooth');
+        return false;
+      }
+
+      // Intentar limpiar cualquier conexión previa que haya quedado colgada
+      try {
+        await BluetoothManager.disconnect();
+      } catch (disconnectError) {
+        console.warn(
+          'Error intentando resetear la conexión Bluetooth antes de conectar:',
+          disconnectError,
+        );
+      }
+
       await BluetoothManager.connect(printer.address);
       this.currentPrinter = printer;
       this.isConnected = true;
@@ -160,10 +177,18 @@ class BluetoothPrinterService {
       await this.savePrinter(printer);
 
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error connecting to printer:', error);
+      this.currentPrinter = null;
       this.isConnected = false;
-      Alert.alert('Error', `No se pudo conectar a la impresora ${printer.name}`);
+
+      const message =
+        typeof error?.message === 'string'
+          ? `No se pudo conectar a la impresora ${printer.name}.` +
+            `\n\nDetalle: ${error.message}`
+          : `No se pudo conectar a la impresora ${printer.name}`;
+
+      Alert.alert('Error', message);
       return false;
     }
   }
@@ -316,16 +341,25 @@ class BluetoothPrinterService {
       await BluetoothEscposPrinter.printerInit();
 
       // Encabezado
-      await BluetoothEscposPrinter.printText('================================\n', {});
+      await BluetoothEscposPrinter.printText(
+        '================================\n',
+        {},
+      );
       await BluetoothEscposPrinter.printText(businessName + '\n', {
         align: 'center',
         widthtimes: 1,
       });
-      await BluetoothEscposPrinter.printText('================================\n', {});
+      await BluetoothEscposPrinter.printText(
+        '================================\n',
+        {},
+      );
       await BluetoothEscposPrinter.printText(title + '\n', {
         align: 'center',
       });
-      await BluetoothEscposPrinter.printText('================================\n', {});
+      await BluetoothEscposPrinter.printText(
+        '================================\n',
+        {},
+      );
 
       // Contenido
       for (const line of lines) {
@@ -333,11 +367,17 @@ class BluetoothPrinterService {
       }
 
       // Pie
-      await BluetoothEscposPrinter.printText('================================\n', {});
+      await BluetoothEscposPrinter.printText(
+        '================================\n',
+        {},
+      );
       await BluetoothEscposPrinter.printText('¡GRACIAS POR SU COMPRA!\n', {
         align: 'center',
       });
-      await BluetoothEscposPrinter.printText('================================\n', {});
+      await BluetoothEscposPrinter.printText(
+        '================================\n',
+        {},
+      );
       await BluetoothEscposPrinter.printText('\n\n\n', {});
 
       return true;
