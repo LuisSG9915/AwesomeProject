@@ -11,11 +11,18 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TicketPrinter from '../services/TicketPrinter';
 import FullSyncService from '../services/FullSyncService';
 import FacturaService, { FacturaItem } from '../services/FacturaService';
-import { COLORS } from '../theme/theme';
+import {
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 type ReporteItem = {
   id: number;
@@ -227,7 +234,7 @@ export default function ReporteVentasScreen() {
         await FacturaService.getInstance().imprimirFacturaExistente(
           row.no_venta,
           row.sucursal,
-          row.caja || 1,
+          row.caja || 2,
           () => loadVentas(),
         );
         return;
@@ -276,21 +283,33 @@ export default function ReporteVentasScreen() {
       <View style={styles.titleRow}>
         <Text style={styles.title}>Consulta a Ventas</Text>
         <TouchableOpacity style={styles.refreshButton} onPress={loadVentas}>
-          <Text style={styles.refreshIcon}>🔄</Text>
+          <Icon name="refresh" type="material" color="#fff" size={20} />
         </TouchableOpacity>
       </View>
 
       {allVentas.length > 0 && (
         <View style={styles.infoCard}>
+          <Icon
+            name="info"
+            type="material"
+            color={COLORS.primary}
+            size={20}
+            style={{ marginRight: 8 }}
+          />
           <Text style={styles.infoText}>
-            📊 {allVentas.length} ventas sincronizadas en la base local
+            {allVentas.length} ventas sincronizadas en la base local
           </Text>
         </View>
       )}
 
       {allVentas.length === 0 && (
         <View style={styles.warningCard}>
-          <Text style={styles.warningIcon}>⚠️</Text>
+          <Icon
+            name="warning"
+            type="material"
+            color={COLORS.warning}
+            size={24}
+          />
           <Text style={styles.warningText}>
             No hay ventas sincronizadas. Inicia sesión nuevamente o sincroniza
             desde el menú principal.
@@ -306,7 +325,14 @@ export default function ReporteVentasScreen() {
               style={styles.dateInput}
               onPress={() => setShowPicker1(true)}
             >
-              <Text style={styles.dateText}>📅 {formatDate(fecha1)}</Text>
+              <Icon
+                name="event"
+                type="material"
+                color={COLORS.primary}
+                size={20}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.dateText}>{formatDate(fecha1)}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.col}>
@@ -315,7 +341,14 @@ export default function ReporteVentasScreen() {
               style={styles.dateInput}
               onPress={() => setShowPicker2(true)}
             >
-              <Text style={styles.dateText}>📅 {formatDate(fecha2)}</Text>
+              <Icon
+                name="event"
+                type="material"
+                color={COLORS.primary}
+                size={20}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.dateText}>{formatDate(fecha2)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -409,6 +442,7 @@ export default function ReporteVentasScreen() {
           <FlatList
             data={items}
             keyExtractor={i => String(i.id)}
+            scrollEnabled={false}
             renderItem={({ item }) => (
               <View style={styles.rowItem}>
                 <View style={{ flex: 1 }}>
@@ -420,33 +454,51 @@ export default function ReporteVentasScreen() {
                     {item.tipoPago}
                   </Text>
                 </View>
-                <Text style={styles.money}>${item.importe.toFixed(2)}</Text>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <TouchableOpacity onPress={() => imprimirTicket(item)}>
-                    <Text style={styles.link}>Imprimir</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => visualizarTicket(item)}>
-                    <Text style={styles.link}>Visualizar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => facturarVenta(item)}
-                    disabled={!item.folioFactura && !item.facturacionMovil}
-                  >
-                    <Text
-                      style={[
-                        styles.link,
-                        !item.folioFactura &&
-                          !item.facturacionMovil &&
-                          styles.linkDisabled,
-                      ]}
+                  <Text style={styles.money}>${item.importe.toFixed(2)}</Text>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      onPress={() => imprimirTicket(item)}
+                      style={styles.iconBtn}
                     >
-                      {item.folioFactura
-                        ? 'Imprimir factura'
-                        : item.facturacionMovil
-                        ? 'Facturar'
-                        : 'Factura no disponible'}
+                      <Icon
+                        name="print"
+                        type="material"
+                        color={COLORS.primary}
+                        size={20}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => visualizarTicket(item)}
+                      style={styles.iconBtn}
+                    >
+                      <Icon
+                        name="visibility"
+                        type="material"
+                        color={COLORS.info}
+                        size={20}
+                      />
+                    </TouchableOpacity>
+                    <Text onPress={() => console.log(item)}>
+                      Caja {item?.caja}
                     </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => facturarVenta(item)}
+                      disabled={!item.folioFactura && !item.facturacionMovil}
+                      style={styles.iconBtn}
+                    >
+                      <Icon
+                        name="receipt"
+                        type="material"
+                        color={
+                          !item.folioFactura && !item.facturacionMovil
+                            ? COLORS.muted
+                            : COLORS.success
+                        }
+                        size={20}
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
@@ -456,15 +508,15 @@ export default function ReporteVentasScreen() {
         {items.length > 0 && (
           <View style={styles.totalsBox}>
             <View style={styles.rowBetween}>
-              <Text>Total</Text>
+              <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.moneySmall}>${total.toFixed(2)}</Text>
             </View>
             <View style={styles.rowBetween}>
-              <Text>Total Efectivo</Text>
+              <Text style={styles.totalLabel}>Total Efectivo</Text>
               <Text style={styles.moneySmall}>${totalEfectivo.toFixed(2)}</Text>
             </View>
             <View style={styles.rowBetween}>
-              <Text>Total Créditos</Text>
+              <Text style={styles.totalLabel}>Total Créditos</Text>
               <Text style={styles.moneySmall}>${totalCredito.toFixed(2)}</Text>
             </View>
           </View>
@@ -477,7 +529,12 @@ export default function ReporteVentasScreen() {
             <View style={styles.rowBetween}>
               <Text style={styles.modalTitle}>Visualización del Ticket</Text>
               <TouchableOpacity onPress={() => setTicketVisible(false)}>
-                <Text style={styles.link}>Cerrar</Text>
+                <Icon
+                  name="close"
+                  type="material"
+                  color={COLORS.primary}
+                  size={24}
+                />
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 400 }}>
@@ -496,32 +553,29 @@ export default function ReporteVentasScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: SPACING.m, paddingBottom: SPACING.xxl },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.m,
   },
-  title: { fontSize: 22, fontWeight: 'bold', color: COLORS.textPrimary },
+  title: { ...TYPOGRAPHY.h2 },
   refreshButton: {
     backgroundColor: COLORS.primary,
-    borderRadius: 10,
-    padding: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 3,
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.s,
+    ...SHADOWS.small,
   },
-  refreshIcon: { fontSize: 20 },
   infoCard: {
     backgroundColor: COLORS.primaryLight,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
     borderLeftWidth: 4,
-    borderLeftColor: '#1976D2',
+    borderLeftColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   infoText: {
     color: COLORS.primaryDark,
@@ -530,16 +584,16 @@ const styles = StyleSheet.create({
   },
   warningCard: {
     backgroundColor: '#FFF3E0',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
     borderLeftWidth: 4,
-    borderLeftColor: '#FF9800',
+    borderLeftColor: COLORS.warning,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: SPACING.s,
+    ...SHADOWS.small,
   },
-  warningIcon: { fontSize: 24 },
   warningText: {
     flex: 1,
     color: COLORS.warning,
@@ -548,52 +602,49 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    ...SHADOWS.small,
   },
-  formLabel: { fontWeight: '600', marginBottom: 6 },
+  formLabel: { ...TYPOGRAPHY.h3, fontSize: 14, marginBottom: 4 },
   input: {
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: BORDER_RADIUS.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
     marginTop: 4,
   },
   dateInput: {
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: BORDER_RADIUS.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
     marginTop: 4,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...SHADOWS.small,
   },
   dateText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: COLORS.primary,
   },
   iosPickerContainer: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    marginTop: 8,
+    borderRadius: BORDER_RADIUS.m,
+    marginTop: SPACING.s,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   iosPickerHeader: {
     backgroundColor: COLORS.background,
-    padding: 12,
+    padding: SPACING.m,
     alignItems: 'flex-end',
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
@@ -608,53 +659,77 @@ const styles = StyleSheet.create({
     height: 200,
   },
   secondaryBtn: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: SPACING.m,
   },
-  secondaryBtnText: { color: '#222', fontWeight: '700' },
+  secondaryBtnText: { color: COLORS.primary, fontWeight: '700', fontSize: 16 },
   cardTitle: {
-    fontWeight: '600',
-    fontSize: 16,
-    marginBottom: 8,
-    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.h3,
+    fontSize: 18,
+    marginBottom: SPACING.m,
   },
-  muted: { color: COLORS.textSecondary },
-  row: { flexDirection: 'row', gap: 8 },
+  muted: { color: COLORS.muted, textAlign: 'center', padding: SPACING.m },
+  row: { flexDirection: 'row', gap: SPACING.m },
   col: { flex: 1 },
   rowItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: SPACING.m,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
   },
-  invTitle: { fontWeight: '600' },
-  money: { width: 100, textAlign: 'right', fontWeight: '600' },
-  link: { color: COLORS.primary, fontWeight: '600', marginTop: 4 },
-  linkDisabled: { color: COLORS.textSecondary },
+  invTitle: { fontWeight: '600', color: COLORS.textPrimary, fontSize: 14 },
+  money: {
+    width: 100,
+    textAlign: 'right',
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
+    fontSize: 16,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+    gap: 8,
+  },
+  iconBtn: {
+    padding: 4,
+  },
   totalsBox: {
-    backgroundColor: '#fafafa',
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 8,
+    backgroundColor: COLORS.background,
+    padding: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
+    marginTop: SPACING.m,
   },
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
+    marginBottom: 4,
   },
-  moneySmall: { fontWeight: '600' },
+  totalLabel: { color: COLORS.textSecondary, fontSize: 14 },
+  moneySmall: { fontWeight: '600', color: COLORS.textPrimary, fontSize: 14 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    padding: 16,
+    padding: SPACING.l,
   },
-  modalCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 16 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
-  mono: { fontFamily: 'Courier', fontSize: 12, lineHeight: 16 },
+  modalCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.xl,
+    padding: SPACING.l,
+    ...SHADOWS.large,
+  },
+  modalTitle: { ...TYPOGRAPHY.h3, fontSize: 18 },
+  mono: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 12,
+    lineHeight: 16,
+    color: COLORS.textPrimary,
+  },
 });

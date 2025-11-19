@@ -8,10 +8,17 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import BluetoothPrinterService, {
   PrinterDevice,
 } from '../services/BluetoothPrinterService';
-import { COLORS } from '../theme/theme';
+import {
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 export default function PrinterSettingsScreen() {
   const [printers, setPrinters] = useState<PrinterDevice[]>([]);
@@ -129,7 +136,15 @@ export default function PrinterSettingsScreen() {
       {/* Estado Actual */}
       <View style={styles.card}>
         <View style={styles.statusRow}>
-          <Text style={styles.cardTitle}>Estado</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon
+              name="info"
+              type="material"
+              color={COLORS.primary}
+              size={24}
+            />
+            <Text style={styles.cardTitle}>Estado</Text>
+          </View>
           <View
             style={[
               styles.statusBadge,
@@ -137,7 +152,7 @@ export default function PrinterSettingsScreen() {
             ]}
           >
             <Text style={styles.statusText}>
-              {isConnected ? '✅ Conectada' : '❌ Desconectada'}
+              {isConnected ? 'Conectada' : 'Desconectada'}
             </Text>
           </View>
         </View>
@@ -155,12 +170,19 @@ export default function PrinterSettingsScreen() {
                     style={styles.testButton}
                     onPress={handleTestPrint}
                   >
-                    <Text style={styles.testButtonText}>🖨️ Probar</Text>
+                    <Icon name="print" type="material" color="#fff" size={20} />
+                    <Text style={styles.testButtonText}>Probar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.disconnectButton}
                     onPress={handleDisconnect}
                   >
+                    <Icon
+                      name="bluetooth-disabled"
+                      type="material"
+                      color="#fff"
+                      size={20}
+                    />
                     <Text style={styles.disconnectButtonText}>Desconectar</Text>
                   </TouchableOpacity>
                 </>
@@ -173,7 +195,15 @@ export default function PrinterSettingsScreen() {
                   {connecting ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.connectButtonText}>Reconectar</Text>
+                    <>
+                      <Icon
+                        name="bluetooth-connected"
+                        type="material"
+                        color="#fff"
+                        size={20}
+                      />
+                      <Text style={styles.connectButtonText}>Reconectar</Text>
+                    </>
                   )}
                 </TouchableOpacity>
               )}
@@ -184,25 +214,49 @@ export default function PrinterSettingsScreen() {
                 style={styles.clearButton}
                 onPress={handleClearSaved}
               >
-                <Text style={styles.clearButtonText}>
-                  🗑️ Eliminar Impresora
-                </Text>
+                <Icon name="delete" type="material" color="#fff" size={20} />
+                <Text style={styles.clearButtonText}>Eliminar Impresora</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
 
         {!currentPrinter && (
-          <Text style={styles.noPrinter}>
-            No hay impresora configurada. Escanea para encontrar impresoras
-            disponibles.
-          </Text>
+          <View style={styles.emptyState}>
+            <Icon
+              name="print-disabled"
+              type="material"
+              color={COLORS.muted}
+              size={40}
+            />
+            <Text style={styles.noPrinter}>
+              No hay impresora configurada. Escanea para encontrar impresoras
+              disponibles.
+            </Text>
+          </View>
         )}
       </View>
 
       {/* Buscar Impresoras */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Buscar Impresoras Bluetooth</Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 16,
+          }}
+        >
+          <Icon
+            name="bluetooth-searching"
+            type="material"
+            color={COLORS.primary}
+            size={24}
+          />
+          <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
+            Buscar Dispositivos
+          </Text>
+        </View>
         <TouchableOpacity
           style={styles.scanButton}
           onPress={handleScan}
@@ -211,7 +265,7 @@ export default function PrinterSettingsScreen() {
           {scanning ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.scanButtonText}>🔍 Escanear Dispositivos</Text>
+            <Text style={styles.scanButtonText}>Escanear</Text>
           )}
         </TouchableOpacity>
 
@@ -223,7 +277,7 @@ export default function PrinterSettingsScreen() {
         {printers.length > 0 && (
           <View style={styles.printersList}>
             <Text style={styles.listTitle}>
-              Impresoras Encontradas ({printers.length})
+              Dispositivos Encontrados ({printers.length})
             </Text>
             <FlatList
               data={printers}
@@ -234,15 +288,28 @@ export default function PrinterSettingsScreen() {
                   onPress={() => handleConnect(item)}
                   disabled={connecting}
                 >
+                  <View style={styles.printerItemIcon}>
+                    <Icon
+                      name="print"
+                      type="material"
+                      color={COLORS.primary}
+                      size={24}
+                    />
+                  </View>
                   <View style={styles.printerItemContent}>
-                    <Text style={styles.printerItemName}>🖨️ {item.name}</Text>
+                    <Text style={styles.printerItemName}>{item.name}</Text>
                     <Text style={styles.printerItemAddress}>
                       {item.address}
                     </Text>
                   </View>
                   {currentPrinter?.address === item.address && isConnected && (
                     <View style={styles.connectedBadge}>
-                      <Text style={styles.connectedBadgeText}>Conectada</Text>
+                      <Icon
+                        name="check"
+                        type="material"
+                        color="#fff"
+                        size={14}
+                      />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -254,7 +321,22 @@ export default function PrinterSettingsScreen() {
 
       {/* Información */}
       <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>ℹ️ Información</Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 8,
+          }}
+        >
+          <Icon
+            name="help-outline"
+            type="material"
+            color={COLORS.primary}
+            size={20}
+          />
+          <Text style={styles.infoTitle}>Información</Text>
+        </View>
         <Text style={styles.infoText}>
           • La impresora seleccionada se guardará automáticamente
         </Text>
@@ -273,37 +355,34 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-    padding: 16,
+    padding: SPACING.m,
   },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.h2,
+    marginBottom: SPACING.m,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    ...SHADOWS.small,
   },
   statusRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: SPACING.m,
   },
   cardTitle: {
+    ...TYPOGRAPHY.h3,
     fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
+    marginBottom: SPACING.s,
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.l,
   },
   statusConnected: {
     backgroundColor: COLORS.success,
@@ -314,39 +393,47 @@ const styles = StyleSheet.create({
   statusText: {
     color: '#fff',
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 12,
   },
   printerInfo: {
     backgroundColor: COLORS.background,
-    padding: 12,
-    borderRadius: 8,
+    padding: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   printerLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: COLORS.textSecondary,
     marginBottom: 4,
+    fontWeight: '600',
   },
   printerName: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
     marginBottom: 4,
   },
   printerAddress: {
-    fontSize: 13,
+    fontSize: 14,
     color: COLORS.muted,
-    marginBottom: 12,
+    marginBottom: SPACING.m,
+    fontFamily: 'monospace',
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
+    gap: SPACING.s,
+    marginBottom: SPACING.s,
   },
   testButton: {
     flex: 1,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: COLORS.info,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
   testButtonText: {
     color: '#fff',
@@ -355,9 +442,12 @@ const styles = StyleSheet.create({
   disconnectButton: {
     flex: 1,
     backgroundColor: COLORS.error,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
   disconnectButtonText: {
     color: '#fff',
@@ -365,37 +455,49 @@ const styles = StyleSheet.create({
   },
   connectButton: {
     backgroundColor: COLORS.success,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
     alignItems: 'center',
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
   connectButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
   clearButton: {
-    backgroundColor: '#FF5722',
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: COLORS.muted,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.m,
     alignItems: 'center',
+    marginTop: SPACING.s,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
   },
   clearButtonText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: SPACING.l,
   },
   noPrinter: {
-    color: COLORS.muted,
-    fontStyle: 'italic',
+    color: COLORS.textSecondary,
     textAlign: 'center',
-    paddingVertical: 20,
+    marginTop: SPACING.s,
+    paddingHorizontal: SPACING.l,
   },
   scanButton: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: 10,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 8,
+    ...SHADOWS.medium,
   },
   scanButtonText: {
     color: '#fff',
@@ -405,27 +507,36 @@ const styles = StyleSheet.create({
   scanningText: {
     textAlign: 'center',
     color: COLORS.primary,
-    marginTop: 12,
+    marginTop: SPACING.m,
     fontStyle: 'italic',
   },
   printersList: {
-    marginTop: 16,
+    marginTop: SPACING.m,
   },
   listTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.s,
   },
   printerItem: {
-    backgroundColor: COLORS.surface,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+    backgroundColor: COLORS.background,
+    padding: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
+    marginBottom: SPACING.s,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  printerItemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.round,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.m,
   },
   printerItemContent: {
     flex: 1,
@@ -433,27 +544,31 @@ const styles = StyleSheet.create({
   printerItemName: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+    color: COLORS.textPrimary,
+    marginBottom: 2,
   },
   printerItemAddress: {
     fontSize: 12,
     color: COLORS.muted,
+    fontFamily: 'monospace',
   },
   connectedBadge: {
     backgroundColor: COLORS.success,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    width: 24,
+    height: 24,
+    borderRadius: BORDER_RADIUS.round,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   connectedBadgeText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
   },
   infoCard: {
     backgroundColor: COLORS.primaryLight,
-    borderRadius: 10,
-    padding: 16,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
     borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
   },
@@ -461,11 +576,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.primary,
-    marginBottom: 8,
   },
   infoText: {
     fontSize: 14,
     color: COLORS.primaryDark,
     marginBottom: 4,
+    marginLeft: 28,
   },
 });

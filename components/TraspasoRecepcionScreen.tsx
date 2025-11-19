@@ -11,10 +11,17 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import FullSyncService from '../services/FullSyncService';
 import AuthService, { Usuario } from '../services/AuthService';
-import { COLORS } from '../theme/theme';
+import {
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 type Sucursal = { id_sucursal: number; nombre: string };
 
@@ -211,34 +218,65 @@ export default function TraspasoRecepcionScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Búsqueda de Traspasos</Text>
+      <Text style={styles.title}>Traspasos</Text>
 
       <View style={styles.card}>
-        <Text style={styles.formLabel}>Vendedor</Text>
+        <View style={styles.row}>
+          <Icon
+            name="person"
+            type="material"
+            color={COLORS.primary}
+            size={24}
+          />
+          <Text style={styles.cardTitle}>Vendedor</Text>
+        </View>
         <TextInput
           value={'Usuario Actual'}
           editable={false}
-          style={styles.input}
+          style={[styles.input, styles.disabledInput]}
         />
 
-        <Text style={[styles.formLabel, { marginTop: 8 }]}>Filtros</Text>
         <View style={styles.row}>
+          <Icon
+            name="filter-list"
+            type="material"
+            color={COLORS.primary}
+            size={24}
+          />
+          <Text style={styles.cardTitle}>Filtros</Text>
+        </View>
+
+        <View style={styles.dateRow}>
           <View style={styles.col}>
-            <Text style={styles.smallLabel}>Fecha inicial</Text>
+            <Text style={styles.smallLabel}>Desde</Text>
             <TouchableOpacity
               style={styles.dateInput}
               onPress={() => setShowPicker1(true)}
             >
-              <Text style={styles.dateText}>📅 {formatDate(fecha1)}</Text>
+              <Icon
+                name="event"
+                type="material"
+                color={COLORS.primary}
+                size={20}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.dateText}>{formatDate(fecha1)}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.col}>
-            <Text style={styles.smallLabel}>Fecha final</Text>
+            <Text style={styles.smallLabel}>Hasta</Text>
             <TouchableOpacity
               style={styles.dateInput}
               onPress={() => setShowPicker2(true)}
             >
-              <Text style={styles.dateText}>📅 {formatDate(fecha2)}</Text>
+              <Icon
+                name="event"
+                type="material"
+                color={COLORS.primary}
+                size={20}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.dateText}>{formatDate(fecha2)}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -258,11 +296,12 @@ export default function TraspasoRecepcionScreen() {
             onChange={onChangeFecha2}
           />
         )}
+
         <Text style={styles.smallLabel}>Sucursal destino</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 8 }}
+          style={{ marginBottom: SPACING.s }}
         >
           <View style={styles.rowWrap}>
             <TouchableOpacity
@@ -314,33 +353,36 @@ export default function TraspasoRecepcionScreen() {
           <FlatList
             data={filteredTraspasos}
             keyExtractor={i => String(i.id)}
+            scrollEnabled={false}
             renderItem={({ item }) => (
               <View style={styles.rowItem}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.invTitle}>Folio {item.folio}</Text>
-                  <Text style={styles.muted}>
+                  <Text style={styles.mutedRow}>
                     {item.fecha.split('T')[0]} • Origen: {item.sucursalOrigen}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.status,
-                    item.estatus === 'Pendiente'
-                      ? styles.statusPending
-                      : styles.statusDone,
-                  ]}
-                >
-                  {item.estatus}
-                </Text>
-                <TouchableOpacity
-                  style={styles.smallBtn}
-                  onPress={() => {
-                    setSelected(item);
-                    setModalOpen(true);
-                  }}
-                >
-                  <Text style={styles.smallBtnText}>Ir al traspaso</Text>
-                </TouchableOpacity>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Text
+                    style={[
+                      styles.status,
+                      item.estatus === 'Pendiente'
+                        ? styles.statusPending
+                        : styles.statusDone,
+                    ]}
+                  >
+                    {item.estatus}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.smallBtn}
+                    onPress={() => {
+                      setSelected(item);
+                      setModalOpen(true);
+                    }}
+                  >
+                    <Text style={styles.smallBtnText}>Ver Detalle</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           />
@@ -350,36 +392,59 @@ export default function TraspasoRecepcionScreen() {
       <Modal visible={modalOpen} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <View style={styles.rowBetween}>
+            <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Visor de Traspaso</Text>
-              <TouchableOpacity onPress={() => setModalOpen(false)}>
-                <Text style={styles.link}>Cerrar</Text>
+              <TouchableOpacity
+                onPress={() => setModalOpen(false)}
+                style={styles.closeBtn}
+              >
+                <Icon
+                  name="close"
+                  type="material"
+                  size={24}
+                  color={COLORS.textSecondary}
+                />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.rowBetween}>
-              <Text style={styles.folio}>FOLIO: {selected?.folio}</Text>
-              <Text style={styles.statusInline}>
-                ESTATUS: {selected?.estatus}
+            <View style={styles.infoBox}>
+              <View style={styles.rowBetween}>
+                <Text style={styles.folioLabel}>FOLIO</Text>
+                <Text style={styles.folioValue}>#{selected?.folio}</Text>
+              </View>
+              <View style={styles.rowBetween}>
+                <Text style={styles.folioLabel}>ESTATUS</Text>
+                <Text
+                  style={[
+                    styles.statusValue,
+                    selected?.estatus === 'Pendiente'
+                      ? { color: COLORS.warning }
+                      : { color: COLORS.success },
+                  ]}
+                >
+                  {selected?.estatus}
+                </Text>
+              </View>
+              <View style={styles.divider} />
+              <Text style={styles.infoText}>
+                <Text style={{ fontWeight: 'bold' }}>Origen:</Text>{' '}
+                {selected?.sucursalOrigen}
+              </Text>
+              <Text style={styles.infoText}>
+                <Text style={{ fontWeight: 'bold' }}>Destino:</Text>{' '}
+                {selected
+                  ? sucursales.find(
+                      s => s.id_sucursal === selected.sucursalDestino,
+                    )?.nombre
+                  : '-'}
               </Text>
             </View>
-            <Text style={styles.muted}>
-              Sucursal destino:{' '}
-              {selected
-                ? sucursales.find(
-                    s => s.id_sucursal === selected.sucursalDestino,
-                  )?.nombre
-                : '-'}
-            </Text>
-            <Text style={styles.muted}>
-              Ruta origen: {selected?.sucursalOrigen}
-            </Text>
 
-            <View style={[styles.card, { marginTop: 12 }]}>
+            <View style={[styles.card, { marginTop: SPACING.m, flex: 1 }]}>
               <Text style={styles.cardTitle}>Productos</Text>
               <View style={styles.tableHeader}>
                 <Text style={[styles.th, { flex: 2 }]}>Producto</Text>
-                <Text style={styles.th}>Cantidad</Text>
+                <Text style={styles.thRight}>Cant.</Text>
               </View>
               <FlatList
                 data={selected ? detalles[selected.id] || [] : []}
@@ -389,13 +454,12 @@ export default function TraspasoRecepcionScreen() {
                     <Text style={[styles.td, { flex: 2 }]}>
                       {item.descripcion}
                     </Text>
-                    <Text style={styles.tdCenter}>{item.cantidad}</Text>
+                    <Text style={styles.tdRight}>{item.cantidad}</Text>
                   </View>
                 )}
                 ListEmptyComponent={
                   <Text style={styles.muted}>Sin productos</Text>
                 }
-                style={{ maxHeight: 260 }}
               />
             </View>
 
@@ -412,7 +476,14 @@ export default function TraspasoRecepcionScreen() {
                 selected?.estatus === 'Cancelado'
               }
             >
-              <Text style={styles.primaryBtnText}>OK, RECIBO</Text>
+              <Icon
+                name="inventory"
+                type="material"
+                color="#fff"
+                size={20}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.primaryBtnText}>Confirmar Recepción</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -423,141 +494,214 @@ export default function TraspasoRecepcionScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: SPACING.m, paddingBottom: SPACING.xxl },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.h2,
+    marginBottom: SPACING.m,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    ...SHADOWS.small,
   },
-  formLabel: { fontWeight: '600' },
-  smallLabel: { color: COLORS.textSecondary, marginBottom: 4, marginTop: 8 },
+  cardTitle: {
+    ...TYPOGRAPHY.h3,
+    fontSize: 18,
+    marginBottom: 0,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    marginBottom: SPACING.s,
+    marginTop: SPACING.s,
+  },
+  smallLabel: {
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   input: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: BORDER_RADIUS.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
+    color: COLORS.textPrimary,
+    fontSize: 16,
   },
-  row: { flexDirection: 'row', gap: 8 },
+  disabledInput: {
+    backgroundColor: COLORS.border,
+    opacity: 0.7,
+  },
+  dateRow: { flexDirection: 'row', gap: SPACING.m, marginBottom: SPACING.m },
   col: { flex: 1 },
   dateInput: {
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: BORDER_RADIUS.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
     marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   dateText: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.primary,
   },
-  rowWrap: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  rowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    gap: SPACING.s,
+  },
   pill: {
     borderWidth: 1,
-    borderColor: '#bbb',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.l,
+    backgroundColor: COLORS.background,
   },
-  pillOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { color: COLORS.textPrimary },
-  pillTextOn: { color: '#fff', fontWeight: '600' },
+  pillOn: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+    ...SHADOWS.small,
+  },
+  pillText: { color: COLORS.textSecondary, fontWeight: '500' },
+  pillTextOn: { color: '#fff', fontWeight: '700' },
   secondaryBtn: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: SPACING.m,
   },
-  secondaryBtnText: { color: '#222', fontWeight: '700' },
-  cardTitle: {
-    fontWeight: '600',
-    fontSize: 16,
-    marginBottom: 8,
-    color: COLORS.textPrimary,
-  },
-  muted: { color: COLORS.textSecondary },
+  secondaryBtnText: { color: COLORS.primary, fontWeight: '700', fontSize: 16 },
+  muted: { color: COLORS.muted, padding: SPACING.m, textAlign: 'center' },
+  mutedRow: { color: COLORS.textSecondary, fontSize: 12, marginTop: 4 },
   rowItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: SPACING.m,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
   },
-  invTitle: { fontWeight: '600' },
+  invTitle: { fontWeight: '600', color: COLORS.textPrimary, fontSize: 16 },
   status: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginRight: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BORDER_RADIUS.s,
+    overflow: 'hidden',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  statusPending: { backgroundColor: '#FFF3CD', color: '#333' },
-  statusDone: { backgroundColor: '#C8E6C9', color: '#333' },
+  statusPending: { backgroundColor: '#FFF3CD', color: '#F57C00' },
+  statusDone: { backgroundColor: '#E8F5E9', color: '#2E7D32' },
   smallBtn: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.s,
   },
-  smallBtnText: { color: '#fff', fontWeight: '600' },
+  smallBtnText: { color: '#fff', fontWeight: '600', fontSize: 10 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalCard: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '85%',
-    padding: 16,
+    borderTopLeftRadius: BORDER_RADIUS.xl,
+    borderTopRightRadius: BORDER_RADIUS.xl,
+    height: '90%',
+    padding: SPACING.l,
+    ...SHADOWS.large,
   },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
-  link: { color: COLORS.primary, fontWeight: '600' },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  modalTitle: { ...TYPOGRAPHY.h2, fontSize: 20, marginBottom: 0 },
+  closeBtn: { padding: 4 },
+  infoBox: {
+    backgroundColor: COLORS.background,
+    padding: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginBottom: 4,
   },
-  folio: { fontWeight: '700', color: '#d32f2f' },
-  statusInline: { fontWeight: '600' },
+  folioLabel: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  folioValue: { color: COLORS.textPrimary, fontSize: 14, fontWeight: 'bold' },
+  statusValue: { fontSize: 14, fontWeight: 'bold' },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.s,
+  },
+  infoText: { color: COLORS.textPrimary, fontSize: 14, marginBottom: 2 },
   tableHeader: {
     flexDirection: 'row',
-    paddingVertical: 8,
+    paddingVertical: SPACING.s,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: SPACING.s,
+    marginTop: SPACING.s,
+    borderTopLeftRadius: BORDER_RADIUS.m,
+    borderTopRightRadius: BORDER_RADIUS.m,
   },
-  th: { flex: 1, fontWeight: '700' },
+  th: { flex: 1, fontWeight: '700', color: COLORS.primaryDark },
+  thRight: {
+    flex: 1,
+    fontWeight: '700',
+    color: COLORS.primaryDark,
+    textAlign: 'right',
+  },
   tr: {
     flexDirection: 'row',
-    paddingVertical: 10,
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.s,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
   },
-  td: { flex: 1 },
-  tdCenter: { flex: 1, textAlign: 'center' },
+  td: { flex: 1, color: COLORS.textPrimary },
+  tdRight: {
+    flex: 1,
+    textAlign: 'right',
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+  },
   primaryBtn: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    marginTop: SPACING.l,
+    marginBottom: SPACING.l,
+    flexDirection: 'row',
+    ...SHADOWS.medium,
   },
-  primaryBtnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
+  primaryBtnDisabled: { opacity: 0.6, backgroundColor: COLORS.muted },
+  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

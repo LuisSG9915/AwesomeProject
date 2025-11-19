@@ -9,8 +9,15 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import FullSyncService from '../services/FullSyncService';
-import { COLORS } from '../theme/theme';
+import {
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 type EntityType =
   | 'ventas'
@@ -28,13 +35,13 @@ interface EntityTab {
 }
 
 const ENTITY_TABS: EntityTab[] = [
-  { key: 'ventas', title: 'Ventas', icon: '💰' },
-  { key: 'clientes', title: 'Clientes', icon: '👥' },
-  { key: 'productos', title: 'Productos', icon: '📦' },
-  { key: 'precios', title: 'Precios', icon: '💵' },
-  { key: 'inventario', title: 'Inventario', icon: '📊' },
-  { key: 'cartera', title: 'Cartera', icon: '💳' },
-  { key: 'usuarios', title: 'Usuarios', icon: '👤' },
+  { key: 'ventas', title: 'Ventas', icon: 'attach-money' },
+  { key: 'clientes', title: 'Clientes', icon: 'people' },
+  { key: 'productos', title: 'Productos', icon: 'inventory' },
+  { key: 'precios', title: 'Precios', icon: 'price-check' },
+  { key: 'inventario', title: 'Inventario', icon: 'bar-chart' },
+  { key: 'cartera', title: 'Cartera', icon: 'account-balance-wallet' },
+  { key: 'usuarios', title: 'Usuarios', icon: 'person' },
 ];
 
 export default function DataViewScreen() {
@@ -299,7 +306,13 @@ export default function DataViewScreen() {
             style={[styles.tab, selectedTab === tab.key && styles.tabActive]}
             onPress={() => handleTabChange(tab.key)}
           >
-            <Text style={styles.tabIcon}>{tab.icon}</Text>
+            <Icon
+              name={tab.icon}
+              type="material"
+              size={24}
+              color={selectedTab === tab.key ? '#fff' : COLORS.textSecondary}
+              style={styles.tabIcon}
+            />
             <Text
               style={[
                 styles.tabText,
@@ -309,7 +322,14 @@ export default function DataViewScreen() {
               {tab.title}
             </Text>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>
+              <Text
+                style={[
+                  styles.badgeText,
+                  selectedTab === tab.key
+                    ? { color: COLORS.primary }
+                    : { color: COLORS.textPrimary },
+                ]}
+              >
                 {selectedTab === tab.key ? data.length : getCount()}
               </Text>
             </View>
@@ -334,7 +354,20 @@ export default function DataViewScreen() {
           onPress={handlePreviousPage}
           disabled={currentPage === 0}
         >
-          <Text style={styles.paginationButtonText}>← Anterior</Text>
+          <Icon
+            name="chevron-left"
+            type="material"
+            color={currentPage === 0 ? COLORS.textSecondary : '#fff'}
+            size={20}
+          />
+          <Text
+            style={[
+              styles.paginationButtonText,
+              currentPage === 0 && { color: COLORS.textSecondary },
+            ]}
+          >
+            Anterior
+          </Text>
         </TouchableOpacity>
         <Text style={styles.paginationInfo}>
           Página {currentPage + 1} de{' '}
@@ -349,7 +382,26 @@ export default function DataViewScreen() {
           onPress={handleNextPage}
           disabled={currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1}
         >
-          <Text style={styles.paginationButtonText}>Siguiente →</Text>
+          <Text
+            style={[
+              styles.paginationButtonText,
+              currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1 && {
+                color: COLORS.textSecondary,
+              },
+            ]}
+          >
+            Siguiente
+          </Text>
+          <Icon
+            name="chevron-right"
+            type="material"
+            color={
+              currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1
+                ? COLORS.textSecondary
+                : '#fff'
+            }
+            size={20}
+          />
         </TouchableOpacity>
       </View>
 
@@ -360,11 +412,22 @@ export default function DataViewScreen() {
         keyExtractor={(item, index) => `${selectedTab}-${item.id || index}`}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>📭</Text>
+            <Icon
+              name="inbox"
+              type="material"
+              size={64}
+              color={COLORS.muted}
+              style={{ marginBottom: 16 }}
+            />
             <Text style={styles.emptyText}>No hay datos sincronizados</Text>
             <Text style={styles.emptySubtext}>
               Inicia sesión nuevamente para sincronizar
@@ -385,26 +448,30 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-    maxHeight: 90,
+    maxHeight: 100,
   },
   tabsContent: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: SPACING.s,
+    paddingVertical: SPACING.s,
   },
   tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
     marginHorizontal: 4,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F5',
+    borderRadius: BORDER_RADIUS.m,
+    backgroundColor: COLORS.background,
     minWidth: 100,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   tabActive: {
     backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+    ...SHADOWS.small,
   },
   tabIcon: {
-    fontSize: 24,
     marginBottom: 4,
   },
   tabText: {
@@ -416,23 +483,22 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   badge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: BORDER_RADIUS.round,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     marginTop: 4,
-    minWidth: 24,
+    minWidth: 20,
     alignItems: 'center',
   },
   badgeText: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: COLORS.textPrimary,
   },
   statsContainer: {
     backgroundColor: COLORS.surface,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -442,32 +508,28 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   listContent: {
-    padding: 16,
+    padding: SPACING.m,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    ...SHADOWS.small,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
-    paddingBottom: 12,
+    marginBottom: SPACING.s,
+    paddingBottom: SPACING.s,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: COLORS.border,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textPrimary,
     flex: 1,
   },
   cardSubtitle: {
@@ -476,7 +538,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   cardBody: {
-    gap: 6,
+    gap: 4,
   },
   cardText: {
     fontSize: 14,
@@ -491,11 +553,7 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
+    paddingVertical: SPACING.xxl,
   },
   emptyText: {
     fontSize: 18,
@@ -511,23 +569,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFF',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.m,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
   paginationButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.m,
     minWidth: 100,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 4,
   },
   paginationButtonDisabled: {
-    backgroundColor: '#BDBDBD',
-    opacity: 0.5,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   paginationButtonText: {
     color: '#FFF',

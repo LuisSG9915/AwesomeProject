@@ -151,7 +151,10 @@ class BluetoothPrinterService {
   /**
    * Conecta a una impresora específica
    */
-  async connectToPrinter(printer: PrinterDevice): Promise<boolean> {
+  async connectToPrinter(
+    printer: PrinterDevice,
+    options?: { silent?: boolean },
+  ): Promise<boolean> {
     try {
       const isEnabled = await this.enableBluetooth();
       if (!isEnabled) {
@@ -182,13 +185,16 @@ class BluetoothPrinterService {
       this.currentPrinter = null;
       this.isConnected = false;
 
-      const message =
-        typeof error?.message === 'string'
-          ? `No se pudo conectar a la impresora ${printer.name}.` +
-            `\n\nDetalle: ${error.message}`
-          : `No se pudo conectar a la impresora ${printer.name}`;
+      if (!options?.silent) {
+        const message =
+          typeof error?.message === 'string'
+            ? `No se pudo conectar a la impresora ${printer.name}.` +
+              `\n\nDetalle: ${error.message}`
+            : `No se pudo conectar a la impresora ${printer.name}`;
 
-      Alert.alert('Error', message);
+        Alert.alert('Error', message);
+      }
+
       return false;
     }
   }
@@ -240,7 +246,7 @@ class BluetoothPrinterService {
   async connectToSavedPrinter(): Promise<boolean> {
     const savedPrinter = await this.loadSavedPrinter();
     if (savedPrinter) {
-      return await this.connectToPrinter(savedPrinter);
+      return await this.connectToPrinter(savedPrinter, { silent: true });
     }
     return false;
   }

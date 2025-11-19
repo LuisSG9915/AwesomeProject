@@ -7,11 +7,22 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import AuthService from '../services/AuthService';
 import FullSyncService, { SyncProgress } from '../services/FullSyncService';
 import SyncProgressModal from './SyncProgressModal';
-import { APP_NAME, COLORS } from '../theme/theme';
+import {
+  APP_NAME,
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 export default function LoginScreen({ navigation }: any) {
   const [usuario, setUsuario] = useState('');
@@ -66,101 +77,181 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.appName}>{APP_NAME}</Text>
-      <Text style={styles.title}>Inicio de Sesión</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.container}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.headerContainer}>
+          <View style={styles.logoContainer}>
+            <Icon
+              name="ac-unit"
+              type="material"
+              size={50}
+              color={COLORS.primary}
+            />
+          </View>
+          <Text style={styles.appName}>{APP_NAME}</Text>
+          <Text style={styles.subtitle}>Bienvenido de nuevo</Text>
+        </View>
 
-      <TextInput
-        placeholder="Usuario"
-        autoCapitalize="none"
-        value={usuario}
-        onChangeText={setUsuario}
-        style={styles.input}
-        editable={!loading}
-        returnKeyType="next"
-      />
+        <View style={styles.formContainer}>
+          <View style={styles.inputContainer}>
+            <Icon
+              name="person-outline"
+              type="material"
+              size={24}
+              color={COLORS.textSecondary}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              placeholder="Usuario"
+              placeholderTextColor={COLORS.muted}
+              autoCapitalize="none"
+              value={usuario}
+              onChangeText={setUsuario}
+              style={styles.input}
+              editable={!loading}
+              returnKeyType="next"
+            />
+          </View>
 
-      <TextInput
-        placeholder="Contraseña"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-        style={styles.input}
-        editable={!loading}
-        returnKeyType="done"
-        onSubmitEditing={handleLogin}
-      />
+          <View style={styles.inputContainer}>
+            <Icon
+              name="lock-outline"
+              type="material"
+              size={24}
+              color={COLORS.textSecondary}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              placeholder="Contraseña"
+              placeholderTextColor={COLORS.muted}
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              style={styles.input}
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+            />
+          </View>
 
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleLogin}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Ingresar</Text>
-        )}
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Text style={styles.buttonText}>INGRESAR</Text>
+                <Icon
+                  name="arrow-forward"
+                  type="material"
+                  size={20}
+                  color="#fff"
+                />
+              </>
+            )}
+          </TouchableOpacity>
 
-      <Text style={styles.note}>
-        Login solo online por ahora. IndexedDB/Realm pendiente.
-      </Text>
+          <Text style={styles.note}>
+            Login solo online por ahora. IndexedDB/Realm pendiente.
+          </Text>
+        </View>
 
-      <SyncProgressModal visible={syncing} progress={syncProgress} />
-    </View>
+        <SyncProgressModal visible={syncing} progress={syncProgress} />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    justifyContent: 'center',
     backgroundColor: COLORS.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: SPACING.l,
+  },
+  headerContainer: {
+    alignItems: 'center',
+    marginBottom: SPACING.xxl,
+  },
+  logoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+    ...SHADOWS.medium,
+  },
   appName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
+    ...TYPOGRAPHY.h1,
     color: COLORS.primary,
+    marginBottom: SPACING.xs,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 24,
-    textAlign: 'center',
-    color: COLORS.textPrimary,
+  subtitle: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
   },
-  input: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+  formContainer: {
+    backgroundColor: '#fff',
+    padding: SPACING.l,
+    borderRadius: BORDER_RADIUS.xl,
+    ...SHADOWS.medium,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.m,
+    marginBottom: SPACING.m,
+    paddingHorizontal: SPACING.m,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 12,
+  },
+  inputIcon: {
+    marginRight: SPACING.s,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: SPACING.m,
+    color: COLORS.textPrimary,
+    fontSize: 16,
   },
   button: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 14,
-    borderRadius: 8,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    gap: SPACING.s,
+    marginTop: SPACING.s,
+    ...SHADOWS.small,
   },
   buttonDisabled: {
     opacity: 0.7,
+    backgroundColor: COLORS.muted,
   },
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+    letterSpacing: 1,
   },
   note: {
-    marginTop: 16,
+    marginTop: SPACING.l,
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color: COLORS.muted,
     textAlign: 'center',
   },
 });

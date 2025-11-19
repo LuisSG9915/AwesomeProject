@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 import BluetoothPrinterService from './BluetoothPrinterService';
 import FullSyncService from './FullSyncService';
+import { clearWarnings } from 'react-native/types_generated/Libraries/LogBox/Data/LogBoxData';
 
 export interface FacturaItem {
   id: number;
@@ -36,7 +37,10 @@ class FacturaService {
   ): Promise<void> {
     try {
       if (!selectedItems || selectedItems.length === 0) {
-        Alert.alert('Error', 'Debes seleccionar al menos una venta para facturar');
+        Alert.alert(
+          'Error',
+          'Debes seleccionar al menos una venta para facturar',
+        );
         return;
       }
 
@@ -61,7 +65,7 @@ class FacturaService {
           ? '/api/FRESKY/get-data-cfd-xml-clientes-addenda-fecha-nuevo'
           : '/api/FRESKY/get-data-cfd-xml-grupos-addenda-fecha-nuevo';
 
-      const caja = item.caja !== undefined ? item.caja : 1;
+      const caja = item.caja !== undefined ? item.caja : 2;
 
       // Generar XML con los datos de la venta
       const xmlContent = this.generateXMLContent(selectedItems);
@@ -85,7 +89,11 @@ class FacturaService {
         },
         body: JSON.stringify(xmlContent),
       });
-
+      console.log(response);
+      console.log(cleanUrl);
+      console.log(this.apiBaseUrl);
+      console.log(xmlContent);
+      console.log(JSON.stringify(xmlContent));
       let data: any = null;
       try {
         data = await response.json();
@@ -114,7 +122,10 @@ class FacturaService {
       // Obtener e imprimir ticket CFDI
       await this.obtenerTicketCFDI(String(serie), String(folio));
 
-      Alert.alert('Éxito', `Factura ${serie}-${folio} generada e impresa correctamente`);
+      Alert.alert(
+        'Éxito',
+        `Factura ${serie}-${folio} generada e impresa correctamente`,
+      );
 
       onSuccess();
     } catch (error: any) {
@@ -130,7 +141,11 @@ class FacturaService {
     onSuccess?: () => void,
   ): Promise<void> {
     try {
-      const { serie, folio } = await this.obtenerSerieXml(noVenta, sucursal, caja);
+      const { serie, folio } = await this.obtenerSerieXml(
+        noVenta,
+        sucursal,
+        caja,
+      );
 
       await this.obtenerTicketCFDI(serie, folio);
 
@@ -165,8 +180,7 @@ class FacturaService {
 
     if (data && data.serie) {
       const serie = String(data.serie);
-      const folio =
-        data.caja?.toString?.() || data.folio?.toString?.() || '0';
+      const folio = data.caja?.toString?.() || data.folio?.toString?.() || '0';
       return { serie, folio };
     }
 
@@ -174,7 +188,9 @@ class FacturaService {
   }
 
   private async obtenerTicketCFDI(serie: string, folio: string): Promise<void> {
-    const url = `${this.cppApiBaseUrl}/api/Cpp/ticket-cfdi-pagos20?serie=${encodeURIComponent(
+    const url = `${
+      this.cppApiBaseUrl
+    }/api/Cpp/ticket-cfdi-pagos20?serie=${encodeURIComponent(
       serie,
     )}&folio=${encodeURIComponent(folio)}`;
 

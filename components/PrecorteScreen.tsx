@@ -9,10 +9,17 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import TicketPrinter from '../services/TicketPrinter';
 import BluetoothPrinterService from '../services/BluetoothPrinterService';
 import FullSyncService from '../services/FullSyncService';
-import { COLORS } from '../theme/theme';
+import {
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 type PrecorteItem = {
   id: number;
@@ -40,10 +47,28 @@ export default function PrecorteScreen() {
 
   const loadInventario = async () => {
     try {
+      // Parsear la fecha seleccionada (YYYY-MM-DD) a un rango de día LOCAL
+      // para usarlo tanto en el filtro de inventario como en el cálculo de ventas
+      const [yearStr, monthStr, dayStr] = fecha.split('-');
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10);
+      const day = parseInt(dayStr, 10);
+
+      const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+      const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
       await FullSyncService.initialize();
       const inventario = FullSyncService.getInventario(500) || [];
-      console.log(inventario);
-      const mapped: PrecorteItem[] = inventario.map(
+
+      // Filtrar por fechaArrastre dentro del día seleccionado
+      const inventarioFiltrado = inventario.filter((inv: any) => {
+        const fa = inv.fechaArrastre;
+        if (!fa) return false;
+        const d = fa instanceof Date ? fa : new Date(fa);
+        return d >= startOfDay && d <= endOfDay;
+      });
+      consoleRealm('inventarioFiltrado', inventarioFiltrado);
+      const mapped: PrecorteItem[] = inventarioFiltrado.map(
         (inv: any, index: number) => ({
           id: inv.id ?? index,
           clave_prod: String(inv.claveProd ?? ''),
@@ -59,14 +84,7 @@ export default function PrecorteScreen() {
       setItems(mapped);
 
       // Calcular total efectivo desde ventas (tipoPago 1) para la fecha seleccionada
-      // OJO: el string "YYYY-MM-DD" lo parseamos como fecha LOCAL para evitar corrimientos por UTC
-      const [yearStr, monthStr, dayStr] = fecha.split('-');
-      const year = parseInt(yearStr, 10);
-      const month = parseInt(monthStr, 10);
-      const day = parseInt(dayStr, 10);
-      const fechaDate = new Date(year, month - 1, day); // fecha local a medianoche
-
-      const totalEf = FullSyncService.getVentasTotalEfectivoForDate(fechaDate);
+      const totalEf = FullSyncService.getVentasTotalEfectivoForDate(startOfDay);
       setTotalEfectivo(totalEf);
     } catch (error) {
       console.error('Error al cargar inventario para precorte:', error);
@@ -116,8 +134,15 @@ export default function PrecorteScreen() {
         <Text style={styles.title}>Precorte</Text>
         {printerConnected && (
           <View style={styles.printerBadge}>
+            <Icon
+              name="print"
+              type="material"
+              size={14}
+              color="#fff"
+              style={{ marginRight: 4 }}
+            />
             <Text style={styles.printerBadgeText}>
-              🖨️ {printerName || 'Conectada'}
+              {printerName || 'Conectada'}
             </Text>
           </View>
         )}
@@ -125,7 +150,12 @@ export default function PrecorteScreen() {
 
       {!printerConnected && (
         <View style={styles.warningCard}>
-          <Text style={styles.warningIcon}>⚠️</Text>
+          <Icon
+            name="warning"
+            type="material"
+            color={COLORS.warning}
+            size={24}
+          />
           <Text style={styles.warningText}>
             No hay impresora configurada. Ve a Configuración de Impresora para
             conectar una.
@@ -134,51 +164,75 @@ export default function PrecorteScreen() {
       )}
 
       <View style={styles.card}>
-        <Text style={styles.formLabel}>Fecha</Text>
-        <TextInput
-          value={fecha}
-          onChangeText={setFecha}
-          style={styles.input}
-          placeholder="YYYY-MM-DD"
-        />
+        <View style={styles.row}>
+          <Icon name="event" type="material" color={COLORS.primary} size={24} />
+          <Text style={styles.formLabel}>Fecha</Text>
+        </View>
+        <View style={styles.dateContainer}>
+          <TextInput
+            value={fecha}
+            onChangeText={setFecha}
+            style={styles.input}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={COLORS.muted}
+          />
+        </View>
         <TouchableOpacity style={styles.secondaryBtn} onPress={consultar}>
           <Text style={styles.secondaryBtnText}>Consultar</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Detalle</Text>
-        <View style={styles.tableHeader}>
-          <Text style={[styles.th, { flex: 2 }]}>Producto</Text>
-          {/* <Text style={styles.th}>Entradas</Text>
-          <Text style={styles.th}>Salidas</Text> */}
-          <Text style={styles.th}>Saldo</Text>
+        <View style={styles.row}>
+          <Icon name="list" type="material" color={COLORS.primary} size={24} />
+          <Text style={styles.cardTitle}>Detalle del Inventario</Text>
         </View>
-        {items.length === 0 ? (
-          <Text style={styles.muted}>No hay datos</Text>
-        ) : (
-          <FlatList
-            data={items}
-            keyExtractor={i => String(i.id)}
-            renderItem={({ item }) => (
-              <View style={styles.tr}>
-                <Text style={[styles.td, { flex: 2 }]}>{item.descripcion}</Text>
-                {/* <Text style={styles.tdCenter}>{item.entradas.toFixed(2)}</Text>
-                <Text style={styles.tdCenter}>{item.salidas.toFixed(2)}</Text> */}
-                <Text style={styles.tdCenter}>{item.ifValue.toFixed(2)}</Text>
-              </View>
-            )}
-          />
-        )}
+
+        <View style={styles.tableContainer}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.th, { flex: 2 }]}>Producto</Text>
+            <Text style={styles.thRight}>Saldo</Text>
+          </View>
+          {items.length === 0 ? (
+            <Text style={styles.muted}>No hay datos para mostrar</Text>
+          ) : (
+            <FlatList
+              data={items}
+              keyExtractor={i => String(i.id)}
+              scrollEnabled={false}
+              renderItem={({ item }) => (
+                <View style={styles.tr}>
+                  <Text style={[styles.td, { flex: 2 }]}>
+                    {item.descripcion}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tdRight,
+                      item.ifValue < 0 && styles.negative,
+                    ]}
+                  >
+                    {item.ifValue.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+            />
+          )}
+        </View>
 
         <View style={styles.footerBox}>
-          <Text style={styles.footerText}>
-            Total efectivo: ${totalEfectivo.toFixed(2)}
-          </Text>
+          <Text style={styles.footerLabel}>Total Efectivo Recaudado</Text>
+          <Text style={styles.footerValue}>${totalEfectivo.toFixed(2)}</Text>
         </View>
 
         <TouchableOpacity style={styles.primaryBtn} onPress={imprimir}>
-          <Text style={styles.primaryBtnText}>Imprimir</Text>
+          <Icon
+            name="print"
+            type="material"
+            color="#fff"
+            size={20}
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.primaryBtnText}>Imprimir Reporte</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -187,19 +241,21 @@ export default function PrecorteScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: SPACING.m, paddingBottom: SPACING.xxl },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.m,
   },
-  title: { fontSize: 22, fontWeight: 'bold', color: COLORS.textPrimary },
+  title: { ...TYPOGRAPHY.h2 },
   printerBadge: {
     backgroundColor: COLORS.success,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.l,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   printerBadgeText: {
     color: '#fff',
@@ -208,77 +264,125 @@ const styles = StyleSheet.create({
   },
   warningCard: {
     backgroundColor: '#FFF3E0',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
     borderLeftWidth: 4,
-    borderLeftColor: '#FF9800',
+    borderLeftColor: COLORS.warning,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: SPACING.s,
+    ...SHADOWS.small,
   },
-  warningIcon: { fontSize: 20 },
   warningText: {
     flex: 1,
     color: COLORS.warning,
     fontSize: 13,
+    fontWeight: '500',
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    ...SHADOWS.small,
   },
-  cardTitle: { fontWeight: '600', fontSize: 16, marginBottom: 8 },
-  formLabel: { fontWeight: '600', marginBottom: 6 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    marginBottom: SPACING.s,
+  },
+  cardTitle: { ...TYPOGRAPHY.h3, fontSize: 18, marginBottom: 0 },
+  formLabel: { ...TYPOGRAPHY.h3, fontSize: 16, marginBottom: 0 },
+  dateContainer: {
+    marginTop: SPACING.s,
+  },
   input: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
+    borderRadius: BORDER_RADIUS.m,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.m,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+  },
+  tableContainer: {
+    marginTop: SPACING.s,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.m,
+    overflow: 'hidden',
   },
   tableHeader: {
     flexDirection: 'row',
-    paddingVertical: 8,
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
+    backgroundColor: COLORS.primaryLight,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
   },
-  th: { flex: 1, fontWeight: '700' },
+  th: { flex: 1, fontWeight: '700', color: COLORS.primaryDark },
+  thRight: {
+    flex: 1,
+    fontWeight: '700',
+    color: COLORS.primaryDark,
+    textAlign: 'right',
+  },
   tr: {
     flexDirection: 'row',
-    paddingVertical: 10,
+    paddingVertical: SPACING.s,
+    paddingHorizontal: SPACING.m,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
-  td: { flex: 1 },
-  tdCenter: { flex: 1, textAlign: 'center' },
-  muted: { color: COLORS.textSecondary, marginTop: 8 },
+  td: { flex: 1, color: COLORS.textPrimary, fontSize: 14 },
+  tdRight: {
+    flex: 1,
+    textAlign: 'right',
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+  },
+  negative: { color: COLORS.error },
+  muted: { color: COLORS.muted, padding: SPACING.m, textAlign: 'center' },
   footerBox: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+    marginTop: SPACING.m,
+    padding: SPACING.m,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.m,
+    alignItems: 'center',
   },
-  footerText: { fontWeight: '700' },
+  footerLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  footerValue: {
+    color: COLORS.success,
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
   primaryBtn: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    marginTop: SPACING.l,
+    flexDirection: 'row',
+    ...SHADOWS.medium,
   },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
+  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   secondaryBtn: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: SPACING.m,
   },
-  secondaryBtnText: { color: '#222', fontWeight: '700' },
+  secondaryBtnText: { color: COLORS.primary, fontWeight: '700', fontSize: 16 },
 });

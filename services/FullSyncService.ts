@@ -636,6 +636,7 @@ class FullSyncService {
       claveProd?: number | null;
       saldo: number;
       fechaArrastre?: Date | null;
+      descripcion?: string | null;
     }[],
   ): Promise<void> {
     if (!movimientos.length) return;
@@ -663,6 +664,7 @@ class FullSyncService {
           claveProd: claveProdValue,
           fechaArrastre: m.fechaArrastre ?? new Date(),
           saldo: m.saldo,
+          descripcion: m.descripcion ?? null,
           // Fecha centinela para indicar que aún no se sincroniza
           syncedAt: new Date(0),
         });

@@ -10,10 +10,17 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import TicketPrinter from '../services/TicketPrinter';
 import FullSyncService from '../services/FullSyncService';
 import AuthService, { Usuario } from '../services/AuthService';
-import { COLORS } from '../theme/theme';
+import {
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from '../theme/theme';
 
 type Invoice = {
   id: number;
@@ -239,14 +246,24 @@ export default function BillingScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Cobranza</Text>
-        <Text style={styles.badge}>
-          Fecha: {new Date().toLocaleDateString()}
-        </Text>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>
+            📅 {new Date().toLocaleDateString()}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.card}>
         <View style={styles.rowBetween}>
-          <Text style={styles.cardTitle}>Cliente</Text>
+          <View style={styles.row}>
+            <Icon
+              name="person"
+              type="material"
+              color={COLORS.primary}
+              size={24}
+            />
+            <Text style={styles.cardTitle}>Cliente</Text>
+          </View>
           <TouchableOpacity
             style={styles.smallBtn}
             onPress={toggleClientModal}
@@ -263,32 +280,58 @@ export default function BillingScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Facturas Pendientes</Text>
+        <View style={styles.row}>
+          <Icon
+            name="receipt"
+            type="material"
+            color={COLORS.primary}
+            size={24}
+          />
+          <Text style={styles.cardTitle}>Facturas Pendientes</Text>
+        </View>
         {invoices.length === 0 ? (
           <Text style={styles.muted}>No hay facturas</Text>
         ) : (
-          <View>
+          <View style={styles.invoiceList}>
             {invoices.map((inv, idx) => (
-              <View key={inv.id} style={styles.invRow}>
+              <TouchableOpacity
+                key={inv.id}
+                style={[styles.invRow, inv.pagar && styles.invRowSelected]}
+                onPress={() => handleTogglePayment(idx)}
+                activeOpacity={0.7}
+              >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.invTitle}>{inv.nota}</Text>
                   <Text style={styles.muted}>{inv.fecha}</Text>
                 </View>
-                <Text style={styles.money}>${inv.importe.toFixed(2)}</Text>
-                <TouchableOpacity
-                  onPress={() => handleTogglePayment(idx)}
-                  style={[styles.checkBox, inv.pagar && styles.checkBoxOn]}
-                />
-              </View>
+                <View style={styles.amountContainer}>
+                  <Text style={styles.money}>${inv.importe.toFixed(2)}</Text>
+                  <View
+                    style={[styles.checkBox, inv.pagar && styles.checkBoxOn]}
+                  >
+                    {inv.pagar && (
+                      <Icon
+                        name="check"
+                        type="material"
+                        size={14}
+                        color="#fff"
+                      />
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
             ))}
             <View style={styles.totalsBox}>
               <View style={styles.rowBetween}>
-                <Text>Total pagado</Text>
+                <Text style={styles.totalLabel}>Total pagado</Text>
                 <Text style={styles.moneySmall}>${totalPaid.toFixed(2)}</Text>
               </View>
+              <View style={styles.divider} />
               <View style={styles.rowBetween}>
-                <Text>Total a pagar</Text>
-                <Text style={styles.moneySmall}>${totalToPay.toFixed(2)}</Text>
+                <Text style={styles.totalLabelMain}>Total a pagar</Text>
+                <Text style={styles.totalValueMain}>
+                  ${totalToPay.toFixed(2)}
+                </Text>
               </View>
             </View>
           </View>
@@ -298,9 +341,15 @@ export default function BillingScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Método de pago</Text>
         <View style={styles.payRow}>
-          <Chip label="Efectivo" selected={efectivo} onPress={toggleEfectivo} />
+          <Chip
+            label="Efectivo"
+            icon="attach-money"
+            selected={efectivo}
+            onPress={toggleEfectivo}
+          />
           <Chip
             label="Transferencia"
+            icon="account-balance"
             selected={transferencia}
             onPress={toggleTransferencia}
           />
@@ -313,8 +362,9 @@ export default function BillingScreen() {
           onPress={insertar}
           disabled={totalToPay <= 0 || isProcessing}
         >
+          <Icon name="check-circle" type="material" color="#fff" size={24} />
           <Text style={styles.successBtnText}>
-            {isProcessing ? 'Procesando...' : 'Guardar Pago'}
+            {isProcessing ? 'Procesando...' : 'Registrar Cobro'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -323,12 +373,21 @@ export default function BillingScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Seleccionar Cliente</Text>
-            <TextInput
-              placeholder="Buscar cliente..."
-              value={searchTerm}
-              onChangeText={setSearchTerm}
-              style={styles.input}
-            />
+            <View style={styles.searchContainer}>
+              <Icon
+                name="search"
+                type="material"
+                size={20}
+                color={COLORS.muted}
+              />
+              <TextInput
+                placeholder="Buscar cliente..."
+                value={searchTerm}
+                onChangeText={setSearchTerm}
+                style={styles.searchInput}
+                placeholderTextColor={COLORS.muted}
+              />
+            </View>
             <FlatList
               data={filteredClients}
               keyExtractor={i => String(i.idCliente)}
@@ -339,6 +398,11 @@ export default function BillingScreen() {
                     handleSelectClient(item.idCliente, item.cliente)
                   }
                 >
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {item.cliente.charAt(0)}
+                    </Text>
+                  </View>
                   <Text style={styles.listTitle}>{item.cliente}</Text>
                 </TouchableOpacity>
               )}
@@ -359,10 +423,12 @@ export default function BillingScreen() {
 
 function Chip({
   label,
+  icon,
   selected,
   onPress,
 }: {
   label: string;
+  icon: string;
   selected?: boolean;
   onPress?: () => void;
 }) {
@@ -370,7 +436,15 @@ function Chip({
     <TouchableOpacity
       onPress={onPress}
       style={[styles.chip, selected && styles.chipOn]}
+      activeOpacity={0.8}
     >
+      <Icon
+        name={icon}
+        type="material"
+        size={18}
+        color={selected ? '#fff' : COLORS.textSecondary}
+        style={{ marginRight: 4 }}
+      />
       <Text style={[styles.chipText, selected && styles.chipTextOn]}>
         {label}
       </Text>
@@ -380,152 +454,231 @@ function Chip({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: SPACING.m, paddingBottom: SPACING.xxl },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.m,
   },
-  title: { fontSize: 22, fontWeight: 'bold', color: COLORS.textPrimary },
+  title: { ...TYPOGRAPHY.h2 },
   badge: {
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.l,
+  },
+  badgeText: {
+    color: COLORS.primaryDark,
+    fontWeight: '600',
+    fontSize: 12,
   },
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    ...SHADOWS.small,
   },
   rowBetween: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  cardTitle: { fontWeight: '600', fontSize: 16, color: COLORS.textPrimary },
-  valueText: { marginTop: 8, color: COLORS.textPrimary },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+  },
+  cardTitle: {
+    ...TYPOGRAPHY.h3,
+    fontSize: 18,
+  },
+  valueText: {
+    marginTop: SPACING.s,
+    ...TYPOGRAPHY.body,
+    paddingLeft: 32, // Align with title text
+  },
   smallBtn: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.m,
   },
-  smallBtnText: { color: '#fff', fontWeight: '600' },
-  muted: { color: COLORS.textSecondary },
+  smallBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+  muted: {
+    color: COLORS.muted,
+    fontSize: 14,
+    paddingLeft: 32,
+    marginTop: SPACING.s,
+  },
+  invoiceList: {
+    marginTop: SPACING.m,
+  },
   invRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: SPACING.m,
+    paddingHorizontal: SPACING.s,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.s,
   },
-  invTitle: { fontWeight: '600' },
+  invRowSelected: {
+    backgroundColor: COLORS.primaryLight,
+  },
+  invTitle: { fontWeight: '600', color: COLORS.textPrimary, fontSize: 16 },
+  amountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.m,
+  },
   money: {
-    width: 100,
     textAlign: 'right',
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: COLORS.textPrimary,
+    fontSize: 16,
   },
   checkBox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
+    width: 24,
+    height: 24,
+    borderRadius: BORDER_RADIUS.round,
     borderWidth: 2,
-    borderColor: '#999',
-    marginLeft: 10,
+    borderColor: COLORS.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  checkBoxOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkBoxOn: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
   totalsBox: {
-    backgroundColor: '#fafafa',
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 8,
+    backgroundColor: COLORS.background,
+    padding: SPACING.m,
+    borderRadius: BORDER_RADIUS.m,
+    marginTop: SPACING.m,
   },
-  rowWrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
-  pill: {
-    borderWidth: 1,
-    borderColor: '#bbb',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginTop: 6,
+  totalLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
   },
-  pillOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  pillText: { color: COLORS.textPrimary },
-  pillTextOn: { color: '#fff', fontWeight: '600' },
-  moneySmall: { fontWeight: '600' },
-  payRow: { flexDirection: 'row', gap: 8, marginVertical: 8 },
+  totalLabelMain: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.s,
+  },
+  moneySmall: { fontWeight: '600', color: COLORS.textPrimary },
+  totalValueMain: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  payRow: { flexDirection: 'row', gap: SPACING.s, marginVertical: SPACING.m },
   chip: {
-    borderWidth: 1,
-    borderColor: '#aaa',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  chipOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  chipText: { color: COLORS.textPrimary },
-  chipTextOn: { color: '#fff', fontWeight: '600' },
-  formBox: { marginTop: 8 },
-  formLabel: { fontWeight: '600', marginBottom: 6 },
-  input: {
-    backgroundColor: COLORS.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.l,
+    marginRight: SPACING.s,
+    backgroundColor: COLORS.background,
   },
-  hint: { color: COLORS.textSecondary },
-  primaryBtn: {
+  chipOn: {
     backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 8,
+    borderColor: COLORS.primary,
+    ...SHADOWS.small,
   },
-  primaryBtnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
+  chipText: { color: COLORS.textSecondary, fontWeight: '500' },
+  chipTextOn: { color: '#fff', fontWeight: '700' },
+  primaryBtnDisabled: { opacity: 0.6, backgroundColor: COLORS.muted },
   successBtn: {
     backgroundColor: COLORS.success,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    marginTop: SPACING.m,
+    flexDirection: 'row',
+    gap: SPACING.s,
+    ...SHADOWS.medium,
   },
-  successBtnText: { color: '#fff', fontWeight: '700' },
+  successBtnText: { color: '#fff', fontWeight: '700', fontSize: 18 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalCard: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '70%',
-    padding: 16,
+    borderTopLeftRadius: BORDER_RADIUS.xl,
+    borderTopRightRadius: BORDER_RADIUS.xl,
+    maxHeight: '80%',
+    padding: SPACING.l,
+    ...SHADOWS.large,
   },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  listItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  modalTitle: {
+    ...TYPOGRAPHY.h2,
+    marginBottom: SPACING.m,
+    textAlign: 'center',
   },
-  listTitle: { fontWeight: '600' },
-  secondaryBtn: {
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 12,
-    borderRadius: 10,
+  searchContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.m,
+    paddingHorizontal: SPACING.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.m,
   },
-  secondaryBtnText: { color: '#222', fontWeight: '700' },
+  searchInput: {
+    flex: 1,
+    paddingVertical: SPACING.m,
+    marginLeft: SPACING.s,
+    color: COLORS.textPrimary,
+    fontSize: 16,
+  },
+  listItem: {
+    paddingVertical: SPACING.m,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.m,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.round,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+  listTitle: { fontWeight: '600', color: COLORS.textPrimary, fontSize: 16 },
+  secondaryBtn: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
+    alignItems: 'center',
+    marginTop: SPACING.l,
+  },
+  secondaryBtnText: {
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+    fontSize: 16,
+  },
 });

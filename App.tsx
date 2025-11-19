@@ -15,7 +15,9 @@ import {
   Text,
   ScrollView,
   Alert,
+  Dimensions,
 } from 'react-native';
+import { Icon } from 'react-native-elements';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -34,10 +36,51 @@ import AuthService from './services/AuthService';
 import FullSyncService, { SyncProgress } from './services/FullSyncService';
 import SyncProgressModal from './components/SyncProgressModal';
 import BluetoothPrinterService from './services/BluetoothPrinterService';
-import { APP_NAME, COLORS } from './theme/theme';
+import {
+  APP_NAME,
+  COLORS,
+  SPACING,
+  SHADOWS,
+  BORDER_RADIUS,
+  TYPOGRAPHY,
+} from './theme/theme';
 import 'react-native-devsettings';
 // OR if you are using AsyncStorage
 import 'react-native-devsettings/withAsyncStorage';
+
+declare const global: any;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var consoleRealm: (label: string, value: any, limit?: number) => void;
+}
+
+if (__DEV__) {
+  (global as any).consoleRealm = (
+    label: string,
+    value: any,
+    limit: number = 20,
+  ) => {
+    try {
+      if (!value) {
+        console.log(`${label}: <empty>`, value);
+        return;
+      }
+
+      const isArrayLike =
+        Array.isArray(value) || typeof (value as any).length === 'number';
+
+      const arr = isArrayLike
+        ? Array.from(value as any).slice(0, limit)
+        : [value];
+      const plain = JSON.parse(JSON.stringify(arr));
+      console.log(`${label} (${plain.length})`, plain);
+    } catch (error) {
+      console.log(`${label} (raw, error al convertir)`, value, error);
+    }
+  };
+}
+
 const Stack = createNativeStackNavigator();
 
 function App() {
@@ -199,74 +242,65 @@ function AppContent({ navigation }: { navigation: any }) {
     {
       id: 'sales',
       title: 'Punto de Venta',
-      icon: '🛒',
-      color: '#9C27B0',
-      gradient: ['#9C27B0', '#7B1FA2'],
+      icon: 'shopping-cart',
+      type: 'material',
+      color: COLORS.cards.sales,
       screen: 'Sales',
-      description: 'Registra ventas y emite tickets',
+      description: 'Registra ventas',
     },
     {
       id: 'billing',
       title: 'Cobranza',
-      icon: '💰',
-      color: '#FF9800',
-      gradient: ['#FF9800', '#F57C00'],
+      icon: 'attach-money',
+      type: 'material',
+      color: COLORS.cards.billing,
       screen: 'Billing',
-      description: 'Gestiona pagos y facturas',
+      description: 'Gestiona pagos',
     },
     {
       id: 'precorte',
       title: 'Precorte',
-      icon: '📋',
-      color: '#607D8B',
-      gradient: ['#607D8B', '#455A64'],
+      icon: 'assignment',
+      type: 'material',
+      color: COLORS.cards.precorte,
       screen: 'Precorte',
-      description: 'Revisa el corte del día',
+      description: 'Revisa el corte',
     },
     {
       id: 'traspaso',
-      title: 'Recepción de Traspasos',
-      icon: '🚚',
-      color: '#3F51B5',
-      gradient: ['#3F51B5', '#303F9F'],
+      title: 'Traspasos',
+      icon: 'local-shipping',
+      type: 'material',
+      color: COLORS.cards.traspaso,
       screen: 'Traspaso',
-      description: 'Recibe mercancía en tránsito',
+      description: 'Recibe mercancía',
     },
     {
       id: 'reporte',
-      title: 'Consulta a Ventas',
-      icon: '📈',
-      color: '#009688',
-      gradient: ['#009688', '#00796B'],
+      title: 'Ventas',
+      icon: 'trending-up',
+      type: 'material',
+      color: COLORS.cards.report,
       screen: 'ReporteVentas',
-      description: 'Consulta histórico de ventas',
+      description: 'Histórico ventas',
     },
-    // {
-    //   id: 'grupos',
-    //   title: 'Grupos de Clientes',
-    //   icon: '👥',
-    //   color: '#3949AB',
-    //   gradient: ['#3949AB', '#283593'],
-    //   screen: 'ClienteGrupos',
-    //   description: 'Administra catálogos en Realm',
-    // },
     {
       id: 'dataview',
-      title: 'Datos Sincronizados',
-      icon: '📊',
-      color: '#00897B',
-      gradient: ['#00897B', '#00695C'],
+      title: 'Datos',
+      icon: 'bar-chart',
+      type: 'material',
+      color: COLORS.cards.data,
       screen: 'DataView',
-      description: 'Visualiza datos almacenados localmente',
+      description: 'Datos locales',
     },
     {
       id: 'printersettings',
-      title: 'Configuración de Impresora',
-      icon: '🖨️',
-      color: '#5E35B1',
-      gradient: ['#5E35B1', '#4527A0'],
+      title: 'Impresora',
+      icon: 'print',
+      type: 'material',
+      color: COLORS.cards.settings,
       screen: 'PrinterSettings',
-      description: 'Configura impresora de tickets Bluetooth',
+      description: 'Configurar',
     },
   ];
 
@@ -279,25 +313,27 @@ function AppContent({ navigation }: { navigation: any }) {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <View style={styles.headerTop}>
-              <View>
-                <Text style={styles.welcomeText}>Bienvenido</Text>
-                <Text style={styles.businessName}>{APP_NAME}</Text>
-                <Text style={styles.userName}>👤 {userName}</Text>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.welcomeText}>Bienvenido</Text>
+              <Text style={styles.businessName}>{APP_NAME}</Text>
+              <View style={styles.userBadge}>
+                <Icon
+                  name="person"
+                  type="material"
+                  size={14}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.userName}>{userName}</Text>
               </View>
-              <TouchableOpacity
-                style={styles.logoutButton}
-                onPress={handleLogout}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.logoutIcon}>🚪</Text>
-                <Text style={styles.logoutText}>Salir</Text>
-              </TouchableOpacity>
             </View>
-            <Text style={styles.subtitle}>
-              Selecciona un módulo para comenzar
-            </Text>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+              activeOpacity={0.7}
+            >
+              <Icon name="logout" type="material" size={20} color="#fff" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -308,43 +344,46 @@ function AppContent({ navigation }: { navigation: any }) {
               key={item.id}
               style={[styles.menuCard, { backgroundColor: item.color }]}
               onPress={() => navigation.navigate(item.screen)}
-              activeOpacity={0.8}
+              activeOpacity={0.9}
             >
-              <View style={styles.menuCardContent}>
-                <View style={styles.iconContainer}>
-                  <Text style={styles.menuIcon}>{item.icon}</Text>
-                </View>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuDescription}>{item.description}</Text>
+              <View style={styles.iconContainer}>
+                <Icon
+                  name={item.icon}
+                  type={item.type}
+                  color={item.color}
+                  size={28}
+                />
               </View>
-              <View style={styles.cardFooter}>
-                <Text style={styles.cardFooterText}>Abrir →</Text>
-              </View>
+              <Text style={styles.menuTitle}>{item.title}</Text>
+              <Text style={styles.menuDescription}>{item.description}</Text>
             </TouchableOpacity>
           ))}
+        </View>
 
-          {/* Sync Button */}
+        {/* Sync Button */}
+        <View style={styles.syncContainer}>
           <TouchableOpacity
             style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
             onPress={handleFullSync}
             disabled={syncing}
             activeOpacity={0.85}
           >
-            <View style={styles.syncButtonContent}>
-              <Text style={styles.syncButtonIcon}>🔄</Text>
-              <Text style={styles.syncButtonText}>
-                {syncing
-                  ? 'Sincronizando datos...'
-                  : 'Sincronizar Todos los Datos'}
-              </Text>
-            </View>
+            <Icon
+              name="sync"
+              type="material"
+              size={24}
+              color="#fff"
+              style={syncing ? styles.spinning : {}}
+            />
+            <Text style={styles.syncButtonText}>
+              {syncing ? 'Sincronizando...' : 'Sincronizar Datos'}
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* Footer Info */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>{APP_NAME} v1.0.0</Text>
-          <Text style={styles.footerSubtext}>Desarrollado con ❤️</Text>
         </View>
       </ScrollView>
 
@@ -352,6 +391,9 @@ function AppContent({ navigation }: { navigation: any }) {
     </View>
   );
 }
+
+const { width } = Dimensions.get('window');
+const cardWidth = (width - SPACING.m * 3) / 2;
 
 const styles = StyleSheet.create({
   container: {
@@ -365,175 +407,122 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 30,
+    paddingBottom: SPACING.xl,
   },
   header: {
     backgroundColor: COLORS.primary,
-    paddingTop: 40,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
+    paddingTop: SPACING.xl,
+    paddingBottom: SPACING.l + 20, // Extra padding for overlap
+    paddingHorizontal: SPACING.l,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-  },
-  headerContent: {
-    width: '100%',
+    ...SHADOWS.large,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
   },
   welcomeText: {
-    fontSize: 16,
+    ...TYPOGRAPHY.body,
     color: COLORS.primaryLight,
-    fontWeight: '500',
+    marginBottom: SPACING.xs,
   },
   businessName: {
-    fontSize: 28,
+    ...TYPOGRAPHY.h1,
     color: '#fff',
-    fontWeight: 'bold',
-    marginTop: 4,
+    fontSize: 26,
+    marginBottom: SPACING.s,
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.round,
+    alignSelf: 'flex-start',
+    gap: SPACING.xs,
   },
   userName: {
+    ...TYPOGRAPHY.body,
     fontSize: 14,
-    color: '#E3F2FD',
-    fontWeight: '600',
-    marginTop: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
+    color: COLORS.primary,
+    fontWeight: 'bold',
   },
   logoutButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  logoutIcon: {
-    fontSize: 18,
-  },
-  logoutText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#E3F2FD',
-    marginTop: 8,
-    textAlign: 'center',
+    padding: SPACING.s,
+    borderRadius: BORDER_RADIUS.m,
   },
   menuGrid: {
-    padding: 16,
-    gap: 16,
+    paddingHorizontal: SPACING.m,
+    marginTop: -20, // Overlap header
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: SPACING.m,
   },
   menuCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
-    minHeight: 140,
-  },
-  menuCardContent: {
-    flex: 1,
+    width: cardWidth,
+    borderRadius: BORDER_RADIUS.l,
+    padding: SPACING.m,
+    height: 150,
+    justifyContent: 'space-between',
+    ...SHADOWS.medium,
   },
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 50,
+    height: 50,
+    borderRadius: BORDER_RADIUS.m,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-  },
-  menuIcon: {
-    fontSize: 32,
   },
   menuTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    ...TYPOGRAPHY.h3,
     color: '#fff',
-    marginBottom: 6,
+    fontSize: 18,
+    marginTop: SPACING.s,
   },
   menuDescription: {
-    fontSize: 13,
-    color: '#fff',
-    opacity: 0.9,
-    lineHeight: 18,
+    ...TYPOGRAPHY.caption,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 12,
+  },
+  syncContainer: {
+    padding: SPACING.m,
+    marginTop: SPACING.m,
   },
   syncButton: {
-    backgroundColor: '#1565C0',
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    marginTop: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  syncButtonDisabled: {
-    opacity: 0.6,
-    backgroundColor: '#90A4AE',
-  },
-  syncButtonContent: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.l,
+    paddingVertical: SPACING.m,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: SPACING.s,
+    ...SHADOWS.medium,
   },
-  syncButtonIcon: {
-    fontSize: 24,
+  syncButtonDisabled: {
+    opacity: 0.7,
+    backgroundColor: COLORS.muted,
   },
   syncButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: 'bold',
     fontSize: 16,
   },
-  cardFooter: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  cardFooterText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'right',
+  spinning: {
+    // Note: Animation would need Animated API, but for now we keep it static
   },
   footer: {
-    paddingVertical: 24,
     alignItems: 'center',
-    marginTop: 8,
+    paddingVertical: SPACING.l,
   },
   footerText: {
-    color: '#999',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  footerSubtext: {
-    color: '#BBB',
-    fontSize: 11,
+    color: COLORS.muted,
+    fontSize: 12,
   },
 });
 
