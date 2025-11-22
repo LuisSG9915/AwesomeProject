@@ -340,7 +340,7 @@ class FullSyncService {
     }
   }
 
-  private async syncInventario(
+  async syncInventario(
     sucursal: number,
     fechaMovto?: string,
   ): Promise<{ success: boolean; error?: string; count?: number }> {

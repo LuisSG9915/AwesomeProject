@@ -11,7 +11,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { Icon } from 'react-native-elements';
+import { Icon, Input } from 'react-native-elements';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import FullSyncService from '../services/FullSyncService';
 import AuthService, { Usuario } from '../services/AuthService';
@@ -23,6 +23,8 @@ import {
   TYPOGRAPHY,
 } from '../theme/theme';
 
+const API_BASE_URL = 'https://cbinfo.no-ip.info:9011';
+
 type Sucursal = { id_sucursal: number; nombre: string };
 
 type Traspaso = {
@@ -33,6 +35,7 @@ type Traspaso = {
   traspaso_responsable_nombre_unique: string;
   folio: number;
   estatus: string;
+  [key: string]: any;
 };
 
 type TraspasoDetalle = {
@@ -56,38 +59,10 @@ export default function TraspasoRecepcionScreen() {
   const [showPicker2, setShowPicker2] = useState(false);
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
 
-  const [traspasos, setTraspasos] = useState<Traspaso[]>([
-    {
-      id: 1,
-      fecha: new Date().toISOString(),
-      sucursalOrigen: 'Ruta 1',
-      sucursalDestino: 1,
-      traspaso_responsable_nombre_unique: 'Juan Pérez',
-      folio: 1234,
-      estatus: 'Pendiente',
-    },
-    {
-      id: 2,
-      fecha: new Date().toISOString(),
-      sucursalOrigen: 'Ruta 2',
-      sucursalDestino: 2,
-      traspaso_responsable_nombre_unique: 'María López',
-      folio: 2345,
-      estatus: 'Pendiente',
-    },
-  ]);
-
-  const [detalles] = useState<Record<number, TraspasoDetalle[]>>({
-    1: [
-      { descripcion: 'Producto A', cantidad: 20 },
-      { descripcion: 'Producto B', cantidad: 15 },
-      { descripcion: 'Producto C', cantidad: 10 },
-    ],
-    2: [
-      { descripcion: 'Producto X', cantidad: 12 },
-      { descripcion: 'Producto Y', cantidad: 7 },
-    ],
-  });
+  const [traspasos, setTraspasos] = useState<Traspaso[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [detalles, setDetalles] = useState<TraspasoDetalle[]>([]);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<Traspaso | null>(null);
@@ -128,6 +103,13 @@ export default function TraspasoRecepcionScreen() {
     return `${dd}/${mm}/${yyyy}`;
   };
 
+  const formatDateForApi = (date: Date): string => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const buildMovilInventarioId = (sucursal: number): number => {
     const suffix = sucursal.toString().padStart(3, '0');
     const base = Date.now().toString();
@@ -152,6 +134,170 @@ export default function TraspasoRecepcionScreen() {
     }
   };
 
+  const loadTraspasos = async () => {
+    if (!currentUser) {
+      Alert.alert('Sesión', 'No se encontró usuario en sesión.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const sucursalParam = formFiltro.sucursal;
+      const vendedorId = (currentUser as any).id ?? 0;
+      const f1 = formatDateForApi(fecha1);
+      const f2 = formatDateForApi(fecha2);
+
+      let url = `${API_BASE_URL}/api/DetalleTraspasos/sp_traspasoBusquedaRecepcion?sucursal=${sucursalParam}&vendedor=${vendedorId}`;
+      if (f1) url += `&fecha1=${encodeURIComponent(f1)}`;
+      if (f2) url += `&fecha2=${encodeURIComponent(f2)}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        throw new Error('Respuesta inválida del servidor');
+      }
+      console.log(data);
+      setTraspasos(
+        data.map((t: any, index: number) => ({
+          ...t,
+          id: t.id ?? t.folio ?? index,
+          fecha: t.fecha || new Date().toISOString(),
+          sucursalOrigen: t.sucursalOrigen || '',
+          sucursalDestino: t.sucDestino ?? t.sucursalDestino ?? 0,
+          traspaso_responsable_nombre_unique:
+            t.traspaso_responsable_nombre_unique || '',
+          folio: t.folio ?? 0,
+          estatus: t.estatus || '',
+        })),
+      );
+    } catch (error: any) {
+      console.error('Error al cargar traspasos:', error);
+      Alert.alert(
+        'Error',
+        error?.message || 'No se pudieron cargar los traspasos',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTraspasoDetalle = async (traspaso: Traspaso) => {
+    if (!currentUser) {
+      Alert.alert('Sesión', 'No se encontró usuario en sesión.');
+      return;
+    }
+
+    try {
+      setLoadingDetalle(true);
+      setDetalles([]);
+
+      const sucursalOrigen =
+        (currentUser.sucursal_origen as number | null | undefined) ?? 0;
+      const vendedorId = (currentUser as any).id ?? 0;
+      const almacenDestino = traspaso.almacenDestino ?? 0;
+      const almacenOrigen = traspaso.almacenOrigen ?? 0;
+      const sucOrigen = traspaso.sucOrigen ?? 0;
+      const sucDestino = traspaso.sucDestino ?? 0;
+
+      const url =
+        `${API_BASE_URL}/api/DetalleTraspasos/sp_traspasoBusquedaFolioRecepecion` +
+        `?folio=${traspaso.folio}` +
+        `&sucursal=${sucursalOrigen}` +
+        `&vendedor=${vendedorId}` +
+        `&almacenDestino=${almacenDestino}` +
+        `&almacenOrigen=${almacenOrigen}` +
+        `&sucOrigen=${sucOrigen}` +
+        `&sucDestino=${sucDestino}` +
+        `&cambio=false&tipoCambio=0&usuario=${vendedorId}&usuarioEjecuta=${vendedorId}`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        throw new Error('Respuesta inválida del servidor');
+      }
+
+      setDetalles(
+        data.map((d: any) => ({
+          descripcion: d.descripcion || '',
+          cantidad: d.cantidad ?? 0,
+          idProducto: d.idProducto,
+        })),
+      );
+
+      setSelected(traspaso);
+      setModalOpen(true);
+    } catch (error: any) {
+      console.error('Error al cargar detalle de traspaso:', error);
+      Alert.alert(
+        'Error',
+        error?.message || 'No se pudo cargar el detalle del traspaso',
+      );
+    } finally {
+      setLoadingDetalle(false);
+    }
+  };
+
+  const receiveTraspaso = async () => {
+    if (!selected || !currentUser) return;
+
+    try {
+      const sucursal =
+        (currentUser.sucursal_origen as number | null | undefined) ??
+        currentSucursal ??
+        0;
+      const vendedorId = (currentUser as any).id ?? 0;
+      const almacenDestino = selected.almacenDestino ?? 0;
+      const almacenOrigen = selected.almacenOrigen ?? 0;
+      const sucOrigen = selected.sucOrigen ?? 0;
+      const sucDestino = selected.sucDestino ?? 0;
+
+      const url =
+        `${API_BASE_URL}/api/DetalleTraspasos/sp_traspasoBusquedaFolioRecepecion` +
+        `?folio=${selected.folio}` +
+        `&sucursal=${sucursal}` +
+        `&vendedor=${vendedorId}` +
+        `&almacenDestino=${almacenDestino}` +
+        `&almacenOrigen=${almacenOrigen}` +
+        `&sucOrigen=${sucOrigen}` +
+        `&sucDestino=${sucDestino}` +
+        `&cambio=true&tipoCambio=1&usuario=${vendedorId}&usuarioEjecuta=${vendedorId}&ip=12&dispositivo=12`;
+
+      const response = await fetch(url);
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch (e) {}
+
+      if (!response.ok) {
+        const msg =
+          (data && (data.mensaje || data.mensaje1)) ||
+          `HTTP ${response.status}`;
+        throw new Error(msg);
+      }
+
+      await FullSyncService.syncInventario(sucursal);
+      await loadTraspasos();
+      setModalOpen(false);
+
+      const msg =
+        (data && (data.mensaje1 || data.mensaje)) ||
+        'El traspaso ha sido recibido y sincronizado.';
+      Alert.alert('Recibido', msg);
+    } catch (error: any) {
+      console.error('Error al recibir traspaso:', error);
+      Alert.alert('Error', error?.message || 'No se pudo recibir el traspaso');
+    }
+  };
+
   const filteredTraspasos = useMemo(() => {
     return traspasos.filter(t =>
       formFiltro.sucursal ? t.sucursalDestino === formFiltro.sucursal : true,
@@ -159,12 +305,7 @@ export default function TraspasoRecepcionScreen() {
   }, [traspasos, formFiltro]);
 
   const onConsultar = () => {
-    Alert.alert(
-      'Búsqueda',
-      `Del: ${formatDate(fecha1)}\nAl: ${formatDate(fecha2)}\nSucursal: ${
-        formFiltro.sucursal || '-'
-      }`,
-    );
+    loadTraspasos();
   };
 
   const onRecibir = () => {
@@ -174,43 +315,7 @@ export default function TraspasoRecepcionScreen() {
       {
         text: 'Sí, recibir',
         onPress: () => {
-          const sucursal = currentSucursal || selected.sucursalDestino || 1;
-          const baseId = buildMovilInventarioId(sucursal);
-          const now = new Date();
-          const detallesTraspaso = selected ? detalles[selected.id] || [] : [];
-
-          FullSyncService.createLocalInventarioMovements(
-            detallesTraspaso.map((item, index) => ({
-              id: baseId + index,
-              sucursal,
-              claveProd:
-                typeof item.idProducto === 'number' ? item.idProducto : null,
-              saldo: item.cantidad,
-              fechaArrastre: now,
-            })),
-          )
-            .then(() => {
-              setTraspasos(prev =>
-                prev.map(t =>
-                  t.id === selected.id ? { ...t, estatus: 'Finalizado' } : t,
-                ),
-              );
-              setModalOpen(false);
-              Alert.alert(
-                'Recibido',
-                'El traspaso ha sido recibido y registrado en inventario.',
-              );
-            })
-            .catch(error => {
-              console.error(
-                'Error al registrar inventario de traspaso:',
-                error,
-              );
-              Alert.alert(
-                'Error',
-                'El traspaso se marcó como recibido pero no se pudo guardar en inventario.',
-              );
-            });
+          receiveTraspaso();
         },
       },
     ]);
@@ -298,6 +403,7 @@ export default function TraspasoRecepcionScreen() {
         )}
 
         <Text style={styles.smallLabel}>Sucursal destino</Text>
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -347,7 +453,9 @@ export default function TraspasoRecepcionScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Resultados</Text>
-        {filteredTraspasos.length === 0 ? (
+        {loading ? (
+          <Text style={styles.muted}>Cargando traspasos...</Text>
+        ) : filteredTraspasos.length === 0 ? (
           <Text style={styles.muted}>Sin resultados</Text>
         ) : (
           <FlatList
@@ -376,8 +484,7 @@ export default function TraspasoRecepcionScreen() {
                   <TouchableOpacity
                     style={styles.smallBtn}
                     onPress={() => {
-                      setSelected(item);
-                      setModalOpen(true);
+                      loadTraspasoDetalle(item);
                     }}
                   >
                     <Text style={styles.smallBtnText}>Ver Detalle</Text>
@@ -446,10 +553,10 @@ export default function TraspasoRecepcionScreen() {
                 <Text style={[styles.th, { flex: 2 }]}>Producto</Text>
                 <Text style={styles.thRight}>Cant.</Text>
               </View>
-              <FlatList
-                data={selected ? detalles[selected.id] || [] : []}
+              <FlatList<TraspasoDetalle>
+                data={detalles}
                 keyExtractor={(_, idx) => String(idx)}
-                renderItem={({ item }) => (
+                renderItem={({ item }: { item: TraspasoDetalle }) => (
                   <View style={styles.tr}>
                     <Text style={[styles.td, { flex: 2 }]}>
                       {item.descripcion}
