@@ -67,7 +67,7 @@ export default function PrecorteScreen() {
         const d = fa instanceof Date ? fa : new Date(fa);
         return d >= startOfDay && d <= endOfDay;
       });
-      consoleRealm('inventarioFiltrado', inventarioFiltrado);
+      // consoleRealm('inventarioFiltrado', inventarioFiltrado);
       const mapped: PrecorteItem[] = inventarioFiltrado.map(
         (inv: any, index: number) => ({
           id: inv.id ?? index,

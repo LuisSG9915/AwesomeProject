@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Icon } from 'react-native-elements';
 import FullSyncService from '../services/FullSyncService';
+import Realm from 'realm';
+import { SyncLogSchema } from '../services/RealmSchemas';
 import {
   COLORS,
   SPACING,
@@ -26,7 +28,8 @@ type EntityType =
   | 'precios'
   | 'inventario'
   | 'cartera'
-  | 'clientes';
+  | 'clientes'
+  | 'syncLogs';
 
 interface EntityTab {
   key: EntityType;
@@ -35,6 +38,7 @@ interface EntityTab {
 }
 
 const ENTITY_TABS: EntityTab[] = [
+  { key: 'syncLogs', title: 'Logs Sync', icon: 'sync' },
   { key: 'ventas', title: 'Ventas', icon: 'attach-money' },
   { key: 'clientes', title: 'Clientes', icon: 'people' },
   { key: 'productos', title: 'Productos', icon: 'inventory' },
@@ -45,7 +49,7 @@ const ENTITY_TABS: EntityTab[] = [
 ];
 
 export default function DataViewScreen() {
-  const [selectedTab, setSelectedTab] = useState<EntityType>('ventas');
+  const [selectedTab, setSelectedTab] = useState<EntityType>('syncLogs');
   const [data, setData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   const [refreshing, setRefreshing] = useState(false);
@@ -62,6 +66,35 @@ export default function DataViewScreen() {
       const offset = currentPage * ITEMS_PER_PAGE;
 
       switch (selectedTab) {
+        case 'syncLogs':
+          const realm = await Realm.open({
+            schema: [SyncLogSchema],
+            schemaVersion: 1,
+          });
+          const logsRealm = realm
+            .objects('SyncLog')
+            .sorted('fechaInicio', true)
+            .slice(offset, offset + ITEMS_PER_PAGE);
+
+          // Convertir objetos de Realm a objetos JavaScript planos
+          const logs = Array.from(logsRealm).map((log: any) => ({
+            id: log.id,
+            fechaInicio: log.fechaInicio ? new Date(log.fechaInicio) : null,
+            fechaFinal: log.fechaFinal ? new Date(log.fechaFinal) : null,
+            exitoso: log.exitoso,
+            razon: log.razon,
+            usuario: log.usuario,
+            ruta: log.ruta,
+            sucursal: log.sucursal,
+            totalRegistros: log.totalRegistros,
+            duracionMs: log.duracionMs,
+            tipo: log.tipo,
+            detalles: log.detalles,
+          }));
+
+          realm.close();
+          setData(logs);
+          break;
         case 'ventas':
           setData(FullSyncService.getVentasPaginated(offset, ITEMS_PER_PAGE));
           break;
@@ -126,131 +159,219 @@ export default function DataViewScreen() {
   };
 
   const renderVenta = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>
-        <Text style={styles.cardSubtitle}>
-          {item.fecha?.toLocaleDateString()}
-        </Text>
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>
+          <Text style={styles.cardSubtitle}>
+            {item.fecha?.toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>Cliente: {item.nombreCliente}</Text>
+          <Text style={styles.cardText}>Producto: {item.nombreProducto}</Text>
+          <Text style={styles.cardText}>Cantidad: {item.cantProducto}</Text>
+          <Text style={styles.cardPrice}>
+            Importe: ${item.importe?.toFixed(2)}
+          </Text>
+          <Text style={styles.cardText}>Vendedor: {item.vendedor}</Text>
+        </View>
       </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>Cliente: {item.nombreCliente}</Text>
-        <Text style={styles.cardText}>Producto: {item.nombreProducto}</Text>
-        <Text style={styles.cardText}>Cantidad: {item.cantProducto}</Text>
-        <Text style={styles.cardPrice}>
-          Importe: ${item.importe?.toFixed(2)}
-        </Text>
-        <Text style={styles.cardText}>Vendedor: {item.vendedor}</Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderCliente = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.nombre}</Text>
-        <Text style={styles.cardSubtitle}>ID: {item.id}</Text>
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
-        <Text style={styles.cardText}>
-          Crédito: {item.credito ? 'Sí' : 'No'}
-        </Text>
-        <Text style={styles.cardText}>
-          Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
-        </Text>
-        {item.latitud && item.longitud ? (
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.nombre}</Text>
+          <Text style={styles.cardSubtitle}>ID: {item.id}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
           <Text style={styles.cardText}>
-            Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
+            Crédito: {item.credito ? 'Sí' : 'No'}
           </Text>
-        ) : null}
+          <Text style={styles.cardText}>
+            Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
+          </Text>
+          {item.latitud && item.longitud ? (
+            <Text style={styles.cardText}>
+              Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
+            </Text>
+          ) : null}
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderProducto = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.descripcion}</Text>
-        <Text style={styles.cardSubtitle}>Clave: {item.claveProd}</Text>
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.descripcion}</Text>
+          <Text style={styles.cardSubtitle}>Clave: {item.claveProd}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>ID: {item.id}</Text>
+          <Text style={styles.cardText}>
+            Es Kit: {item.esKit ? 'Sí' : 'No'}
+          </Text>
+          <Text style={styles.cardText}>
+            Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
+          </Text>
+        </View>
       </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>ID: {item.id}</Text>
-        <Text style={styles.cardText}>Es Kit: {item.esKit ? 'Sí' : 'No'}</Text>
-        <Text style={styles.cardText}>
-          Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
-        </Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderPrecio = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.descripcion}</Text>
-        <Text style={styles.cardPrice}>${item.precio?.toFixed(2)}</Text>
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.descripcion}</Text>
+          <Text style={styles.cardPrice}>${item.precio?.toFixed(2)}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
+          <Text style={styles.cardText}>Clave Producto: {item.claveProd}</Text>
+          <Text style={styles.cardText}>
+            Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
+          </Text>
+        </View>
       </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
-        <Text style={styles.cardText}>Clave Producto: {item.claveProd}</Text>
-        <Text style={styles.cardText}>
-          Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
-        </Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderInventario = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Producto {item.claveProd}</Text>
-        <Text style={styles.cardSubtitle}>Sucursal {item.sucursal}</Text>
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Producto {item.claveProd}</Text>
+          <Text style={styles.cardSubtitle}>Sucursal {item.sucursal}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>ID: {item.id}</Text>
+          <Text style={styles.cardPrice}>Saldo: {item.saldo}</Text>
+          <Text style={styles.cardText}>
+            Fecha Arrastre: {item.fechaArrastre?.toLocaleString() || 'N/A'}
+          </Text>
+        </View>
       </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>ID: {item.id}</Text>
-        <Text style={styles.cardPrice}>Saldo: {item.saldo}</Text>
-        <Text style={styles.cardText}>
-          Fecha Arrastre: {item.fechaArrastre?.toLocaleString() || 'N/A'}
-        </Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderCartera = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.nombreCliente}</Text>
-        <Text style={styles.cardPrice}>${item.saldo?.toFixed(2)}</Text>
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.nombreCliente}</Text>
+          <Text style={styles.cardPrice}>${item.saldo?.toFixed(2)}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
+          <Text style={styles.cardText}>Sucursal: {item.sucursal}</Text>
+          <Text style={styles.cardText}>No. Venta: {item.noVenta}</Text>
+          <Text style={styles.cardText}>
+            Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
+          </Text>
+        </View>
       </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
-        <Text style={styles.cardText}>Sucursal: {item.sucursal}</Text>
-        <Text style={styles.cardText}>No. Venta: {item.noVenta}</Text>
-        <Text style={styles.cardText}>
-          Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
-        </Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderUsuario = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.nombre}</Text>
-        <Text style={styles.cardSubtitle}>{item.claveEmpleado}</Text>
+    <TouchableOpacity onPress={() => console.log(item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.nombre}</Text>
+          <Text style={styles.cardSubtitle}>{item.claveEmpleado}</Text>
+        </View>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>Perfil: {item.descripcionPerfil}</Text>
+          <Text style={styles.cardText}>Puesto: {item.descripcionPuesto}</Text>
+          <Text style={styles.cardText}>
+            Sucursal Origen: {item.sucursalOrigen}
+          </Text>
+        </View>
       </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>Perfil: {item.descripcionPerfil}</Text>
-        <Text style={styles.cardText}>Puesto: {item.descripcionPuesto}</Text>
-        <Text style={styles.cardText}>
-          Sucursal Origen: {item.sucursalOrigen}
-        </Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
+
+  const renderSyncLog = ({ item }: { item: any }) => {
+    const duracionSeg = item.duracionMs
+      ? (item.duracionMs / 1000).toFixed(1)
+      : 'N/A';
+    const statusColor = item.exitoso ? COLORS.success : COLORS.error;
+    const statusIcon = item.exitoso ? 'check-circle' : 'error';
+
+    return (
+      <TouchableOpacity onPress={() => console.log(item)}>
+        <View
+          style={[
+            styles.card,
+            { borderLeftWidth: 4, borderLeftColor: statusColor },
+          ]}
+        >
+          <View style={styles.cardHeader}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            >
+              <Icon
+                name={statusIcon}
+                type="material"
+                color={statusColor}
+                size={20}
+              />
+              <Text style={[styles.cardTitle, { color: statusColor }]}>
+                {item.exitoso ? 'Exitoso' : 'Error'}
+              </Text>
+            </View>
+            <Text style={styles.cardSubtitle}>
+              {item.tipo === 'manual' ? '👤 Manual' : '🤖 Auto'}
+            </Text>
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardText}>
+              📅 Inicio: {item.fechaInicio?.toLocaleString('es-MX')}
+            </Text>
+            {item.fechaFinal && (
+              <Text style={styles.cardText}>
+                🏁 Final: {item.fechaFinal?.toLocaleString('es-MX')}
+              </Text>
+            )}
+            <Text style={styles.cardText}>⏱️ Duración: {duracionSeg}s</Text>
+            <Text style={styles.cardText}>
+              👤 Usuario: {item.usuario || 'N/A'}
+            </Text>
+            <Text style={styles.cardText}>
+              🏢 Sucursal: {item.sucursal || 'N/A'}
+            </Text>
+            <Text style={styles.cardText}>
+              📊 Registros: {item.totalRegistros || 0}
+            </Text>
+            {!item.exitoso && item.razon && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>❌ {item.razon}</Text>
+              </View>
+            )}
+            {item.ruta && (
+              <Text
+                style={[styles.cardText, { fontSize: 11, color: COLORS.muted }]}
+              >
+                🌐 {item.ruta}
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderItem = ({ item }: { item: any }) => {
     switch (selectedTab) {
+      case 'syncLogs':
+        return renderSyncLog({ item });
       case 'ventas':
         return renderVenta({ item });
       case 'clientes':
@@ -420,19 +541,21 @@ export default function DataViewScreen() {
           />
         }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Icon
-              name="inbox"
-              type="material"
-              size={64}
-              color={COLORS.muted}
-              style={{ marginBottom: 16 }}
-            />
-            <Text style={styles.emptyText}>No hay datos sincronizados</Text>
-            <Text style={styles.emptySubtext}>
-              Inicia sesión nuevamente para sincronizar
-            </Text>
-          </View>
+          <TouchableOpacity onPress={() => console.log('refresh')}>
+            <View style={styles.emptyContainer}>
+              <Icon
+                name="inbox"
+                type="material"
+                size={64}
+                color={COLORS.muted}
+                style={{ marginBottom: 16 }}
+              />
+              <Text style={styles.emptyText}>No hay datos sincronizados</Text>
+              <Text style={styles.emptySubtext}>
+                Inicia sesión nuevamente para sincronizar
+              </Text>
+            </View>
+          </TouchableOpacity>
         }
       />
     </View>
@@ -548,7 +671,21 @@ const styles = StyleSheet.create({
   cardPrice: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: COLORS.success,
+    marginTop: 4,
+  },
+  errorBox: {
+    backgroundColor: '#FFEBEE',
+    padding: SPACING.s,
+    borderRadius: BORDER_RADIUS.s,
+    marginTop: SPACING.s,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.error,
+  },
+  errorText: {
+    fontSize: 12,
+    color: COLORS.error,
+    fontWeight: '500',
   },
   emptyContainer: {
     alignItems: 'center',

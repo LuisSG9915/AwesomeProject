@@ -25,7 +25,7 @@ class FullSyncService {
       this.realm = await Realm.open({
         path: 'FullSyncDB',
         schema: ALL_SCHEMAS,
-        schemaVersion: 3,
+        schemaVersion: 4,
         onMigration: (oldRealm: Realm, newRealm: Realm) => {
           const newCartera = newRealm.objects('Cartera');
           for (let i = 0; i < newCartera.length; i++) {
@@ -146,12 +146,15 @@ class FullSyncService {
       const response = await fetch(
         `${this.apiBaseUrl}/api/MovilesVentas/ventas-full/${sucursal}`,
       );
-
+      console.log(
+        this.apiBaseUrl + `/api/MovilesVentas/ventas-full/${sucursal}`,
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
+      console.log(data);
 
       if (!Array.isArray(data)) {
         throw new Error('Respuesta inválida del servidor');
@@ -172,6 +175,7 @@ class FullSyncService {
         data.forEach((venta: any) => {
           this.realm!.create('Venta', {
             id: venta.id,
+            idMovil: venta.idMovil ?? null,
             sucursal: venta.sucursal,
             noVenta: venta.noVenta,
             claveProd: venta.claveProd,
@@ -576,6 +580,7 @@ class FullSyncService {
   async createLocalVentas(
     ventas: {
       id: number;
+      idMovil?: number | null;
       sucursal?: number | null;
       noVenta?: number | null;
       claveProd?: number | null;
@@ -604,6 +609,7 @@ class FullSyncService {
       ventas.forEach(v => {
         this.realm!.create('Venta', {
           id: v.id,
+          idMovil: v.idMovil ?? null,
           sucursal: v.sucursal ?? null,
           noVenta: v.noVenta ?? null,
           claveProd: v.claveProd ?? null,
@@ -626,8 +632,63 @@ class FullSyncService {
     });
   }
 
+  getVentasByMovilId(idMovil: number): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(
+      this.realm.objects('Venta').filtered('idMovil == $0', idMovil),
+    );
+  }
+
+  /**
+   * Actualiza el inventario restando las cantidades vendidas.
+   * Busca el registro existente por sucursal y claveProd y actualiza el saldo.
+   */
+  async updateInventarioAfterSale(
+    items: {
+      sucursal: number;
+      claveProd: number;
+      cantidad: number;
+    }[],
+  ): Promise<void> {
+    if (!items.length) return;
+
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return;
+
+    this.realm.write(() => {
+      items.forEach(item => {
+        // Buscar el registro de inventario existente
+        const inventario = this.realm!.objects('Inventario').filtered(
+          'sucursal == $0 AND claveProd == $1',
+          item.sucursal,
+          item.claveProd,
+        )[0] as any;
+
+        if (inventario) {
+          // Actualizar el saldo restando la cantidad vendida
+          inventario.saldo = (inventario.saldo || 0) - item.cantidad;
+          inventario.fechaArrastre = new Date();
+          console.log(
+            `[FullSync] Inventario actualizado: Producto ${
+              item.claveProd
+            }, Saldo anterior: ${
+              (inventario.saldo || 0) + item.cantidad
+            }, Nuevo saldo: ${inventario.saldo}`,
+          );
+        } else {
+          console.warn(
+            `[FullSync] No se encontró inventario para Producto ${item.claveProd} en Sucursal ${item.sucursal}`,
+          );
+        }
+      });
+    });
+  }
+
   /**
    * Crea movimientos locales en Inventario (por ejemplo, recepción de traspasos).
+   * @deprecated Usar updateInventarioAfterSale para ventas
    */
   async createLocalInventarioMovements(
     movimientos: {

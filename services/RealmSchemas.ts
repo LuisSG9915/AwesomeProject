@@ -4,6 +4,7 @@ export const VentaSchema = {
   name: 'Venta',
   properties: {
     id: 'int',
+    idMovil: 'int?',
     sucursal: 'int?',
     noVenta: 'int?',
     claveProd: 'int?',
@@ -19,9 +20,9 @@ export const VentaSchema = {
     vendedor: 'string?',
     folioFactura: 'bool?',
     facturacionMovil: 'bool?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 export const UsuarioSchema = {
@@ -36,9 +37,9 @@ export const UsuarioSchema = {
     claveEmpleado: 'string?',
     password: 'string?',
     sucursalOrigen: 'int?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 export const ProductoSchema = {
@@ -49,9 +50,9 @@ export const ProductoSchema = {
     descripcion: 'string?',
     esKit: 'bool?',
     fechaAct: 'date?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 export const PrecioSchema = {
@@ -63,9 +64,9 @@ export const PrecioSchema = {
     claveProd: 'int?',
     precio: 'float?',
     fechaAct: 'date?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 export const InventarioSchema = {
@@ -77,9 +78,9 @@ export const InventarioSchema = {
     fechaArrastre: 'date?',
     saldo: 'float?',
     descripcion: 'string?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 export const CarteraSchema = {
@@ -95,9 +96,9 @@ export const CarteraSchema = {
     idSegmento: 'int?',
     noVenta: 'int?',
     cobrado: 'bool?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 export const ClienteFullSchema = {
@@ -111,9 +112,9 @@ export const ClienteFullSchema = {
     credito: 'bool?',
     facturacionMovil: 'bool?',
     fechaAct: 'date?',
-    syncedAt: 'date'
+    syncedAt: 'date',
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
 };
 
 // Esquema para controlar el estado de sincronización
@@ -123,9 +124,32 @@ export const SyncStatusSchema = {
     id: 'string',
     lastSyncDate: 'date?',
     totalRecords: 'int?',
-    status: 'string?' // 'completed', 'in_progress', 'failed'
+    status: 'string?', // 'completed', 'in_progress', 'failed'
   },
-  primaryKey: 'id'
+  primaryKey: 'id',
+};
+
+/**
+ * Schema para logs de sincronización
+ * Registra cada sincronización con detalles completos
+ */
+export const SyncLogSchema = {
+  name: 'SyncLog',
+  properties: {
+    id: 'string', // UUID único
+    fechaInicio: 'date', // Fecha y hora de inicio
+    fechaFinal: 'date?', // Fecha y hora de finalización
+    exitoso: 'bool', // Si fue exitoso o no
+    razon: 'string?', // Razón específica si falló
+    usuario: 'string?', // Usuario que ejecutó la sincronización
+    ruta: 'string?', // Ruta/endpoint de la API
+    sucursal: 'int?', // Sucursal sincronizada
+    totalRegistros: 'int?', // Total de registros sincronizados
+    duracionMs: 'int?', // Duración en milisegundos
+    tipo: 'string?', // 'manual' o 'automatica'
+    detalles: 'string?', // JSON con detalles adicionales
+  },
+  primaryKey: 'id',
 };
 
 export const ALL_SCHEMAS = [
@@ -136,5 +160,6 @@ export const ALL_SCHEMAS = [
   InventarioSchema,
   CarteraSchema,
   ClienteFullSchema,
-  SyncStatusSchema
+  SyncStatusSchema,
+  SyncLogSchema,
 ];

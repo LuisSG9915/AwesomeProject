@@ -62,6 +62,9 @@ export default function SalesScreen() {
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
   const [currentSucursal, setCurrentSucursal] = useState<number>(1);
   const [initializingPrinter, setInitializingPrinter] = useState(true);
+  const [processingSale, setProcessingSale] = useState(false);
+
+  const LOCAL_SALE_ID_THRESHOLD = 1700000000000;
 
   useEffect(() => {
     const init = async () => {
@@ -174,7 +177,6 @@ export default function SalesScreen() {
       const filtered = productos.filter(
         p =>
           p.descripcion.toLowerCase().includes(lowerQuery) ||
-          p.claveProd.includes(query) ||
           p.id.toString().includes(query),
       );
 
@@ -262,12 +264,13 @@ export default function SalesScreen() {
       return;
     }
 
+    setProcessingSale(true);
     try {
       const sucursal = currentSucursal || 1;
       const saleIdMovil = buildMovilSaleId(sucursal);
       const inventarioBaseId = buildMovilSaleId(sucursal);
       const tipoPagoCode =
-        metodoPago === 'efectivo' ? 1 : metodoPago === 'credito' ? 2 : 3; // transferencia
+        metodoPago === 'efectivo' ? 1 : metodoPago === 'credito' ? 3 : 2; // transferencia
       const descripcionMedioPago =
         metodoPago === 'efectivo'
           ? 'Efectivo'
@@ -321,44 +324,126 @@ export default function SalesScreen() {
         rows: cart.length,
         saleIdMovil,
       });
-      await FullSyncService.createLocalVentas(
-        cart.map((item, index) => ({
-          id: saleIdMovil + index,
-          sucursal,
-          noVenta: saleIdMovil,
-          claveProd: parseInt(item.claveProd || '0', 10) || null,
-          nombreProducto: item.descripcion,
-          cantProducto: item.cantidad,
-          precio: item.precio,
-          importe: item.precio * item.cantidad,
-          cveCliente: client.id,
-          nombreCliente: client.nombre,
-          fecha: now,
-          tipoPago: tipoPagoCode,
-          descripcionMedioPago,
-          vendedor,
-          folioFactura: false,
-          facturacionMovil: false,
-        })),
-      );
+      const localVentasPayload = cart.map((item, index) => ({
+        id: saleIdMovil + index,
+        idMovil: saleIdMovil,
+        sucursal,
+        noVenta: saleIdMovil,
+        claveProd: parseInt(item.claveProd || '0', 10) || null,
+        nombreProducto: item.descripcion,
+        cantProducto: item.cantidad,
+        precio: item.precio,
+        importe: item.precio * item.cantidad,
+        cveCliente: client.id,
+        nombreCliente: client.nombre,
+        fecha: now,
+        tipoPago: tipoPagoCode,
+        descripcionMedioPago,
+        vendedor,
+        folioFactura: false,
+        facturacionMovil: false,
+      }));
+
+      await FullSyncService.createLocalVentas(localVentasPayload);
       console.log('[Sales] Local ventas created');
 
-      // Registrar movimiento de inventario (una fila por producto, saldo negativo)
-      console.log('[Sales] Creating local inventario movements', {
+      // Actualizar inventario restando las cantidades vendidas
+      console.log('[Sales] Updating inventory after sale', {
         rows: cart.length,
-        inventarioBaseId,
       });
-      await FullSyncService.createLocalInventarioMovements(
-        cart.map((item, index) => ({
-          id: inventarioBaseId + index,
+      await FullSyncService.updateInventarioAfterSale(
+        cart.map(item => ({
           sucursal,
-          claveProd: parseInt(item.claveProd || '0', 10) || null,
-          saldo: -Math.abs(item.cantidad),
-          fechaArrastre: now,
-          descripcion: item.descripcion,
+          claveProd: parseInt(item.claveProd || '0', 10),
+          cantidad: item.cantidad,
         })),
       );
-      console.log('[Sales] Local inventario movements created');
+      console.log('[Sales] Inventory updated successfully');
+
+      try {
+        const idUsuarioRaw =
+          (currentUser as any)?.idUsuario ?? (currentUser as any)?.id ?? 1;
+        const idUsuario = Number.isFinite(Number(idUsuarioRaw))
+          ? Number(idUsuarioRaw)
+          : 1;
+
+        const ventasRealm = FullSyncService.getVentas();
+
+        // Solo enviar ventas locales (id >= threshold)
+        const ventasLocales = ventasRealm.filter(
+          (venta: any) => venta.id && venta.id >= LOCAL_SALE_ID_THRESHOLD,
+        );
+
+        console.log('[Sales] Filtering local sales', {
+          totalVentas: ventasRealm.length,
+          localVentas: ventasLocales.length,
+          threshold: LOCAL_SALE_ID_THRESHOLD,
+        });
+
+        const payload = ventasLocales.map((venta: any) => {
+          const cliente = venta.cveCliente
+            ? FullSyncService.getClienteFullById(venta.cveCliente)
+            : null;
+
+          return {
+            sucursal: venta.sucursal ?? sucursal,
+            clave_prod: venta.claveProd ?? 0,
+            Cant_producto: venta.cantProducto ?? 0,
+            precio: venta.precio ?? 0,
+            Cve_cliente: venta.cveCliente ?? 0,
+            fecha: (venta.fecha ?? now).toISOString(),
+            tipo_pago: venta.tipoPago ?? tipoPagoCode,
+            usuario: idUsuario,
+            longitud: cliente?.longitud ?? 0,
+            latitud: cliente?.latitud ?? 0,
+            id_movil: venta.idMovil,
+            fechaTransfer: new Date().toISOString(),
+          };
+        });
+
+        if (payload.length > 0) {
+          const url = `https://cbinfo.no-ip.info:9011/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${encodeURIComponent(
+            String(sucursal),
+          )}&idUsuario=${encodeURIComponent(String(idUsuario))}`;
+
+          console.log('[Sales] Sending ventas arrastre payload', {
+            url,
+            rows: payload.length,
+          });
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            console.error(
+              '[Sales] Error sending ventas arrastre',
+              response.status,
+              errorText,
+            );
+          } else {
+            console.log(
+              '[Sales] Ventas arrastre sent successfully',
+              response.status,
+            );
+          }
+        } else {
+          console.log(
+            '[Sales] No local ventas to send (all below threshold)',
+            saleIdMovil,
+          );
+        }
+      } catch (arrastreError) {
+        console.error(
+          '[Sales] Error building/sending ventas arrastre',
+          arrastreError,
+        );
+      }
 
       // Actualizar estado de impresora
       const status = BluetoothPrinterService.getStatus();
@@ -387,6 +472,8 @@ export default function SalesScreen() {
     } catch (error) {
       console.error('[Sales] Error in processSale', error);
       Alert.alert('Error', 'No se pudo procesar la venta');
+    } finally {
+      setProcessingSale(false);
     }
   };
 
@@ -529,13 +616,25 @@ export default function SalesScreen() {
           <TouchableOpacity
             style={[
               styles.primaryBtn,
-              (!selectedClient || !cart.length || !metodoPago) &&
+              (!selectedClient ||
+                !cart.length ||
+                !metodoPago ||
+                processingSale) &&
                 styles.primaryBtnDisabled,
             ]}
             onPress={processSale}
-            disabled={!selectedClient || !cart.length || !metodoPago}
+            disabled={
+              !selectedClient || !cart.length || !metodoPago || processingSale
+            }
           >
-            <Text style={styles.primaryBtnText}>Procesar Venta</Text>
+            {processingSale ? (
+              <View style={styles.loadingBtnRow}>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={styles.primaryBtnText}> Procesando...</Text>
+              </View>
+            ) : (
+              <Text style={styles.primaryBtnText}>Procesar Venta</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -588,6 +687,8 @@ export default function SalesScreen() {
                       setClienteModalOpen(false);
                       setSearchQuery('');
                       setFilteredClientes(clientes);
+                      // Auto-abrir modal de productos después de seleccionar cliente
+                      setTimeout(() => setProductoModalOpen(true), 300);
                     }}
                   >
                     <View style={{ flex: 1 }}>
@@ -881,6 +982,11 @@ const styles = StyleSheet.create({
   },
   primaryBtnDisabled: { opacity: 0.6, backgroundColor: COLORS.muted },
   primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  loadingBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

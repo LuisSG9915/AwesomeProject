@@ -26,6 +26,7 @@ import {
 
 type ReporteItem = {
   id: number;
+  idMovil?: number | null;
   no_venta: number;
   fecha: string;
   nombre: string;
@@ -43,11 +44,28 @@ type ReporteItem = {
   precio?: number;
 };
 
+type GroupedSale = {
+  idMovil: number;
+  no_venta: number;
+  fecha: string;
+  nombre: string;
+  totalImporte: number;
+  tipoPago: 'Efectivo' | 'Credito' | 'Transferencia';
+  sucursal?: number;
+  cve_cliente?: number;
+  productos: Array<{
+    nombreProducto: string;
+    cantProducto: number;
+    precio: number;
+    importe: number;
+  }>;
+};
+
 type TicketLine = string;
 
 export default function ReporteVentasScreen() {
   const today = useMemo(() => new Date(), []);
-  const LOCAL_SALE_ID_THRESHOLD = 17000000000;
+  const LOCAL_SALE_ID_THRESHOLD = 1700000000000;
 
   const formatDate = (date: Date): string => {
     const dd = String(date.getDate()).padStart(2, '0');
@@ -66,6 +84,9 @@ export default function ReporteVentasScreen() {
 
   const [ticketVisible, setTicketVisible] = useState(false);
   const [ticketContent, setTicketContent] = useState<TicketLine[]>([]);
+  const [isLocalView, setIsLocalView] = useState(false);
+  const [groupedItems, setGroupedItems] = useState<GroupedSale[]>([]);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
   const total = useMemo(
     () => items.reduce((s, i) => s + i.importe, 0),
@@ -92,12 +113,20 @@ export default function ReporteVentasScreen() {
 
   const loadVentas = async () => {
     try {
+      setDebugInfo('Inicializando FullSyncService...');
       await FullSyncService.initialize();
+      setDebugInfo('Obteniendo ventas...');
       const ventas = FullSyncService.getVentas(500);
+      setDebugInfo(`Ventas cargadas: ${ventas?.length || 0}`);
       setAllVentas(ventas);
-    } catch (error) {
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
       console.error('Error al cargar ventas:', error);
-      Alert.alert('Error', 'No se pudieron cargar las ventas de la base local');
+      setDebugInfo(`Error al cargar: ${errorMsg}`);
+      Alert.alert(
+        'Error',
+        `No se pudieron cargar las ventas de la base local.\n\nDetalle: ${errorMsg}`,
+      );
     }
   };
 
@@ -123,14 +152,24 @@ export default function ReporteVentasScreen() {
     tipo: number | undefined,
   ): 'Efectivo' | 'Credito' | 'Transferencia' => {
     if (tipo === 1) return 'Efectivo';
-    if (tipo === 2) return 'Credito';
-    if (tipo === 3) return 'Transferencia';
+    if (tipo === 2) return 'Transferencia';
+    if (tipo === 3) return 'Credito';
     return 'Efectivo';
   };
 
   const filtrarVentas = (soloLocales: boolean) => {
     setLoading(true);
+    setIsLocalView(soloLocales);
     try {
+      if (!allVentas || allVentas.length === 0) {
+        Alert.alert(
+          'Sin datos',
+          'No hay ventas cargadas. Intenta sincronizar primero.',
+        );
+        setLoading(false);
+        return;
+      }
+
       if (!fecha1 || !fecha2) {
         Alert.alert('Error', 'Selecciona ambas fechas');
         setLoading(false);
@@ -143,20 +182,36 @@ export default function ReporteVentasScreen() {
       const fecha2Parsed = new Date(fecha2);
       fecha2Parsed.setHours(23, 59, 59, 999);
 
+      console.log('[Reporte] Filtering ventas', {
+        soloLocales,
+        fecha1Parsed,
+        fecha2Parsed,
+        totalVentas: allVentas.length,
+      });
       const filtered = allVentas.filter(venta => {
         if (!venta.fecha) return false;
         const ventaDate = new Date(venta.fecha);
-        if (ventaDate < fecha1Parsed || ventaDate > fecha2Parsed) {
-          return false;
+
+        // Filtrar por fecha siempre
+        const inDateRange =
+          ventaDate >= fecha1Parsed && ventaDate <= fecha2Parsed;
+
+        if (soloLocales) {
+          // Consultar Local: solo ventas con id >= threshold (ventas locales)
+          return inDateRange && venta.id && venta.id >= LOCAL_SALE_ID_THRESHOLD;
+        } else {
+          // Consultar: solo ventas con id < threshold (ventas remotas/API)
+          return (
+            inDateRange && (!venta.id || venta.id < LOCAL_SALE_ID_THRESHOLD)
+          );
         }
-        if (soloLocales && (!venta.id || venta.id <= LOCAL_SALE_ID_THRESHOLD)) {
-          return false;
-        }
-        return true;
       });
+
+      console.log('[Reporte] Filtered results', { count: filtered.length });
 
       const mapped: ReporteItem[] = filtered.map(venta => ({
         id: venta.id,
+        idMovil: venta.idMovil,
         no_venta: venta.noVenta || 0,
         fecha: venta.fecha
           ? new Date(venta.fecha).toISOString()
@@ -176,9 +231,57 @@ export default function ReporteVentasScreen() {
       }));
 
       setItems(mapped);
-    } catch (error) {
+
+      // Si es vista local, agrupar por idMovil
+      if (soloLocales) {
+        const groupedMap = new Map<number, GroupedSale>();
+
+        filtered.forEach(venta => {
+          const idMovil = venta.idMovil || venta.id;
+          if (!groupedMap.has(idMovil)) {
+            groupedMap.set(idMovil, {
+              idMovil,
+              no_venta: venta.noVenta || idMovil,
+              fecha: venta.fecha
+                ? new Date(venta.fecha).toISOString()
+                : new Date().toISOString(),
+              nombre: venta.nombreCliente || 'Sin nombre',
+              totalImporte: 0,
+              tipoPago: mapTipoPago(venta.tipoPago),
+              sucursal: venta.sucursal,
+              cve_cliente: venta.cveCliente,
+              productos: [],
+            });
+          }
+
+          const group = groupedMap.get(idMovil)!;
+          const productoImporte = venta.importe || 0;
+          group.totalImporte += productoImporte;
+          group.productos.push({
+            nombreProducto: venta.nombreProducto || 'Sin nombre',
+            cantProducto: venta.cantProducto || 0,
+            precio: venta.precio || 0,
+            importe: productoImporte,
+          });
+        });
+
+        setGroupedItems(Array.from(groupedMap.values()));
+      } else {
+        setGroupedItems([]);
+      }
+    } catch (error: any) {
       console.error('Error al filtrar ventas:', error);
-      Alert.alert('Error', 'Ocurrió un error al consultar las ventas');
+      const errorMsg = error?.message || String(error) || 'Error desconocido';
+      const errorStack = error?.stack || '';
+      setDebugInfo(
+        `Error filtrado: ${errorMsg}\nStack: ${errorStack.substring(0, 200)}`,
+      );
+      Alert.alert(
+        'Error al consultar',
+        `No se pudieron filtrar las ventas: ${errorMsg}\n\nVentas disponibles: ${
+          allVentas?.length || 0
+        }\nThreshold: ${LOCAL_SALE_ID_THRESHOLD}\n\nIntenta sincronizar de nuevo desde el menú principal.`,
+      );
     } finally {
       setLoading(false);
     }
@@ -188,25 +291,137 @@ export default function ReporteVentasScreen() {
 
   const consultarLocal = () => filtrarVentas(true);
 
+  const APP_NAME = 'FRESKY HIELO';
+
   const generateTicket = (row: ReporteItem): TicketLine[] => {
     const lines: string[] = [];
-    lines.push('================================');
-    lines.push('            TICKET');
-    lines.push('================================');
-    lines.push(`VENTA: ${row.no_venta}`);
-    lines.push(`FECHA: ${new Date(row.fecha).toLocaleString()}`);
-    lines.push(`CLIENTE: ${row.nombre}`);
+    const width = 32;
+    const separator = (char = '=') => char.repeat(width);
+    const center = (text: string) => {
+      const pad = Math.max(0, Math.floor((width - text.length) / 2));
+      return ' '.repeat(pad) + text;
+    };
+    const leftRight = (left: string, right: string) => {
+      const space = Math.max(1, width - left.length - right.length);
+      return left + ' '.repeat(space) + right;
+    };
+
+    // Encabezado
+    lines.push(separator());
+    lines.push(center(APP_NAME));
+    lines.push(center('Productores de hielo y agua'));
+    lines.push(center('purificados del golfo'));
+    lines.push(center('RFC: PHA030403QX9'));
+    lines.push(center('TEL 01 279 8 34 21 10'));
+    lines.push(separator('-'));
+
+    // Datos generales
+    lines.push(`Fecha: ${new Date(row.fecha).toLocaleString('es-MX')}`);
+    if (row.sucursal) lines.push(`Sucursal: ${row.sucursal}`);
+    lines.push(`Cliente: ${row.nombre}`);
+    lines.push(`Id Venta: ${row.no_venta}`);
+    lines.push(separator('-'));
+
+    // Encabezado de productos
+    lines.push('CANT  DESC       PRECIO  IMPORTE');
+
+    // Producto
     if (row.nombreProducto) {
-      lines.push('--------------------------------');
-      lines.push(`PRODUCTO: ${row.nombreProducto}`);
-      if (row.cantProducto) lines.push(`CANTIDAD: ${row.cantProducto}`);
-      if (row.precio) lines.push(`PRECIO UNIT: $${row.precio.toFixed(2)}`);
+      const cant = String(row.cantProducto || 1)
+        .padEnd(4)
+        .substring(0, 4);
+      const desc = (row.nombreProducto || '').substring(0, 10).padEnd(10);
+      const precio = `$${(row.precio || 0).toFixed(2)}`
+        .padStart(7)
+        .substring(0, 7);
+      const importe = `$${row.importe.toFixed(2)}`.padStart(8).substring(0, 8);
+      lines.push(`${cant}  ${desc}${precio} ${importe}`);
     }
-    lines.push('--------------------------------');
-    lines.push(`PAGO: ${row.tipoPago}`);
-    lines.push(`TOTAL: $${row.importe.toFixed(2)}`);
-    lines.push('================================');
+
+    lines.push(separator('-'));
+
+    // Forma de pago y total
+    lines.push(center('FORMA DE PAGO'));
+    lines.push(
+      leftRight(row.tipoPago.toUpperCase(), `$${row.importe.toFixed(2)}`),
+    );
+    lines.push(separator());
+    lines.push(center('GRACIAS POR SU COMPRA'));
+    lines.push(separator());
+
     return lines;
+  };
+
+  const generateGroupedTicket = (group: GroupedSale): TicketLine[] => {
+    const lines: string[] = [];
+    const width = 32;
+    const separator = (char = '=') => char.repeat(width);
+    const center = (text: string) => {
+      const pad = Math.max(0, Math.floor((width - text.length) / 2));
+      return ' '.repeat(pad) + text;
+    };
+    const leftRight = (left: string, right: string) => {
+      const space = Math.max(1, width - left.length - right.length);
+      return left + ' '.repeat(space) + right;
+    };
+
+    // Encabezado
+    lines.push(separator());
+    lines.push(center(APP_NAME));
+    lines.push(center('Productores de hielo y agua'));
+    lines.push(center('purificados del golfo'));
+    lines.push(center('RFC: PHA030403QX9'));
+    lines.push(center('TEL 01 279 8 34 21 10'));
+    lines.push(separator('-'));
+
+    // Datos generales
+    lines.push(`Fecha: ${new Date(group.fecha).toLocaleString('es-MX')}`);
+    if (group.sucursal) lines.push(`Sucursal: ${group.sucursal}`);
+    lines.push(`Cliente: ${group.nombre}`);
+    lines.push(`Id Venta: ${group.no_venta}`);
+    lines.push(separator('-'));
+
+    // Encabezado de productos
+    lines.push('CANT  DESC       PRECIO  IMPORTE');
+
+    // Productos agrupados
+    group.productos.forEach(prod => {
+      const cant = String(prod.cantProducto || 1)
+        .padEnd(4)
+        .substring(0, 4);
+      const desc = (prod.nombreProducto || '').substring(0, 10).padEnd(10);
+      const precio = `$${(prod.precio || 0).toFixed(2)}`
+        .padStart(7)
+        .substring(0, 7);
+      const importe = `$${prod.importe.toFixed(2)}`.padStart(8).substring(0, 8);
+      lines.push(`${cant}  ${desc}${precio} ${importe}`);
+    });
+
+    lines.push(separator('-'));
+
+    // Forma de pago y total
+    lines.push(center('FORMA DE PAGO'));
+    lines.push(
+      leftRight(
+        group.tipoPago.toUpperCase(),
+        `$${group.totalImporte.toFixed(2)}`,
+      ),
+    );
+    lines.push(separator());
+    lines.push(center('GRACIAS POR SU COMPRA'));
+    lines.push(separator());
+
+    return lines;
+  };
+
+  const visualizarGroupedTicket = (group: GroupedSale) => {
+    setTicketContent(generateGroupedTicket(group));
+    setTicketVisible(true);
+  };
+
+  const imprimirGroupedTicket = async (group: GroupedSale) => {
+    const lines = generateGroupedTicket(group);
+    await TicketPrinter.print(lines, 'Ticket de Venta');
   };
 
   const visualizarTicket = (row: ReporteItem) => {
@@ -316,6 +531,23 @@ export default function ReporteVentasScreen() {
           </Text>
         </View>
       )}
+      {/* 
+      {debugInfo && (
+        <TouchableOpacity
+          style={styles.debugCard}
+          onPress={() => Alert.alert('Debug Info', debugInfo)}
+        >
+          <Icon
+            name="bug-report"
+            type="material"
+            color={COLORS.info}
+            size={20}
+          />
+          <Text style={styles.debugText}>
+            Ver información de debug (toca para detalles)
+          </Text>
+        </TouchableOpacity>
+      )} */}
 
       <View style={styles.card}>
         <View style={styles.row}>
@@ -398,7 +630,6 @@ export default function ReporteVentasScreen() {
                   mode="date"
                   display="spinner"
                   onChange={onChangeFecha2}
-                  maximumDate={new Date()}
                   style={styles.iosPicker}
                 />
               </View>
@@ -409,7 +640,6 @@ export default function ReporteVentasScreen() {
                 mode="date"
                 display="default"
                 onChange={onChangeFecha2}
-                maximumDate={new Date()}
               />
             )}
           </>
@@ -435,10 +665,84 @@ export default function ReporteVentasScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Resultados</Text>
-        {items.length === 0 ? (
+        <Text style={styles.cardTitle}>
+          Resultados {isLocalView ? '(Ventas Locales)' : '(Ventas Remotas)'}
+        </Text>
+
+        {/* Vista agrupada para ventas locales */}
+        {isLocalView && groupedItems.length === 0 && (
           <Text style={styles.muted}>Sin resultados</Text>
-        ) : (
+        )}
+        {isLocalView && groupedItems.length > 0 && (
+          <FlatList
+            data={groupedItems}
+            keyExtractor={i => String(i.idMovil)}
+            scrollEnabled={false}
+            renderItem={({ item: group }) => (
+              <View style={styles.groupedItem}>
+                <View style={styles.groupHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.invTitle}>
+                      #{group.no_venta} • {group.nombre}
+                    </Text>
+                    <Text style={styles.muted}>
+                      {new Date(group.fecha).toLocaleString('es-MX')} •{' '}
+                      {group.tipoPago}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.money}>
+                      ${group.totalImporte.toFixed(2)}
+                    </Text>
+                    <View style={styles.actionRow}>
+                      <TouchableOpacity
+                        onPress={() => imprimirGroupedTicket(group)}
+                        style={styles.iconBtn}
+                      >
+                        <Icon
+                          name="print"
+                          type="material"
+                          color={COLORS.primary}
+                          size={20}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => visualizarGroupedTicket(group)}
+                        style={styles.iconBtn}
+                      >
+                        <Icon
+                          name="visibility"
+                          type="material"
+                          color={COLORS.info}
+                          size={20}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+                {/* Lista de productos agrupados */}
+                <View style={styles.productList}>
+                  {group.productos.map((prod, idx) => (
+                    <View key={idx} style={styles.productRow}>
+                      <Text style={styles.productName}>
+                        {prod.cantProducto}x {prod.nombreProducto}
+                      </Text>
+                      <Text style={styles.productPrice}>
+                        ${prod.importe.toFixed(2)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          />
+        )}
+
+        {/* Vista normal para ventas remotas */}
+        {!isLocalView && items.length === 0 && (
+          <Text style={styles.muted}>Sin resultados</Text>
+        )}
+        {!isLocalView && items.length > 0 && (
           <FlatList
             data={items}
             keyExtractor={i => String(i.id)}
@@ -479,12 +783,9 @@ export default function ReporteVentasScreen() {
                         size={20}
                       />
                     </TouchableOpacity>
-                    <Text onPress={() => console.log(item)}>
-                      Caja {item?.caja}
-                    </Text>
                     <TouchableOpacity
                       onPress={() => facturarVenta(item)}
-                      disabled={!item.folioFactura && !item.facturacionMovil}
+                      disabled
                       style={styles.iconBtn}
                     >
                       <Icon
@@ -525,25 +826,29 @@ export default function ReporteVentasScreen() {
 
       <Modal visible={ticketVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.modalTitle}>Visualización del Ticket</Text>
+          <View style={styles.ticketModalCard}>
+            <View style={styles.ticketHeader}>
+              <Text style={styles.ticketModalTitle}>
+                Vista Previa del Ticket
+              </Text>
               <TouchableOpacity onPress={() => setTicketVisible(false)}>
                 <Icon
                   name="close"
                   type="material"
-                  color={COLORS.primary}
+                  color={COLORS.textSecondary}
                   size={24}
                 />
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ maxHeight: 400 }}>
-              {ticketContent.map((line, idx) => (
-                <Text key={idx} style={styles.mono}>
-                  {line}
-                </Text>
-              ))}
-            </ScrollView>
+            <View style={styles.ticketPaper}>
+              <ScrollView style={{ maxHeight: 400 }}>
+                {ticketContent.map((line, idx) => (
+                  <Text key={idx} style={styles.ticketLine}>
+                    {line}
+                  </Text>
+                ))}
+              </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -598,6 +903,24 @@ const styles = StyleSheet.create({
     flex: 1,
     color: COLORS.warning,
     fontSize: 14,
+    fontWeight: '500',
+  },
+  debugCard: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.m,
+    marginBottom: SPACING.m,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.info,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    ...SHADOWS.small,
+  },
+  debugText: {
+    flex: 1,
+    color: COLORS.info,
+    fontSize: 13,
     fontWeight: '500',
   },
   card: {
@@ -683,6 +1006,42 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  groupedItem: {
+    paddingVertical: SPACING.m,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.m,
+    marginBottom: SPACING.s,
+    padding: SPACING.m,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  productList: {
+    marginTop: SPACING.s,
+    paddingTop: SPACING.s,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  productRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  productName: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  productPrice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginLeft: SPACING.s,
+  },
   invTitle: { fontWeight: '600', color: COLORS.textPrimary, fontSize: 14 },
   money: {
     width: 100,
@@ -726,6 +1085,37 @@ const styles = StyleSheet.create({
     ...SHADOWS.large,
   },
   modalTitle: { ...TYPOGRAPHY.h3, fontSize: 18 },
+  ticketModalCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.xl,
+    padding: SPACING.m,
+    ...SHADOWS.large,
+  },
+  ticketHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+    paddingHorizontal: SPACING.s,
+  },
+  ticketModalTitle: {
+    ...TYPOGRAPHY.h3,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+  },
+  ticketPaper: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  ticketLine: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 11,
+    lineHeight: 15,
+    color: '#000000',
+  },
   mono: {
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontSize: 12,

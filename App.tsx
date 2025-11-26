@@ -36,6 +36,8 @@ import AuthService from './services/AuthService';
 import FullSyncService, { SyncProgress } from './services/FullSyncService';
 import SyncProgressModal from './components/SyncProgressModal';
 import BluetoothPrinterService from './services/BluetoothPrinterService';
+import BackgroundSyncService from './services/BackgroundSyncService';
+import SyncStatusPanel from './components/SyncStatusPanel';
 import {
   APP_NAME,
   COLORS,
@@ -192,6 +194,14 @@ function AppContent({ navigation }: { navigation: any }) {
       }
     };
     loadUserInfo();
+
+    // Iniciar sincronización automática en segundo plano
+    BackgroundSyncService.start();
+
+    // Detener sincronización al desmontar
+    return () => {
+      BackgroundSyncService.stop();
+    };
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -304,6 +314,8 @@ function AppContent({ navigation }: { navigation: any }) {
     },
   ];
 
+  const [User, setUser] = useState(0);
+
   return (
     <View style={[styles.container, isDarkMode && styles.containerDark]}>
       <ScrollView
@@ -311,6 +323,9 @@ function AppContent({ navigation }: { navigation: any }) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Panel de estado de sincronización */}
+        <SyncStatusPanel />
+
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
