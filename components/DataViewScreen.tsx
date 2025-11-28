@@ -29,7 +29,8 @@ type EntityType =
   | 'inventario'
   | 'cartera'
   | 'clientes'
-  | 'syncLogs';
+  | 'syncLogs'
+  | 'bitacora';
 
 interface EntityTab {
   key: EntityType;
@@ -39,6 +40,7 @@ interface EntityTab {
 
 const ENTITY_TABS: EntityTab[] = [
   { key: 'syncLogs', title: 'Logs Sync', icon: 'sync' },
+  { key: 'bitacora', title: 'Bitácora', icon: 'history' },
   { key: 'ventas', title: 'Ventas', icon: 'attach-money' },
   { key: 'clientes', title: 'Clientes', icon: 'people' },
   { key: 'productos', title: 'Productos', icon: 'inventory' },
@@ -120,6 +122,11 @@ export default function DataViewScreen() {
         case 'clientes':
           setData(
             FullSyncService.getClientesFullPaginated(offset, ITEMS_PER_PAGE),
+          );
+          break;
+        case 'bitacora':
+          setData(
+            FullSyncService.getSyncTableLogsPaginated(offset, ITEMS_PER_PAGE),
           );
           break;
       }
@@ -368,10 +375,85 @@ export default function DataViewScreen() {
     );
   };
 
+  const renderBitacora = ({ item }: { item: any }) => {
+    const duracionSeg = item.duracionMs
+      ? (item.duracionMs / 1000).toFixed(1)
+      : '0';
+    const totalRegistros =
+      (item.registrosLeidos || 0) +
+      (item.registrosGuardados || 0) +
+      (item.registrosActualizados || 0);
+
+    return (
+      <TouchableOpacity onPress={() => console.log(item)}>
+        <View style={[styles.card, !item.exitoso && styles.cardError]}>
+          <View style={styles.cardHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{item.tabla}</Text>
+              <Text style={styles.cardSubtitle}>
+                {item.fechaInicio
+                  ? new Date(item.fechaInicio).toLocaleString()
+                  : 'N/A'}
+              </Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Icon
+                name={item.exitoso ? 'check-circle' : 'error'}
+                type="material"
+                size={24}
+                color={item.exitoso ? COLORS.success : COLORS.error}
+              />
+              <Text
+                style={[
+                  styles.cardPrice,
+                  { color: item.exitoso ? COLORS.success : COLORS.error },
+                ]}
+              >
+                {item.exitoso ? 'Éxito' : 'Error'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardText}>⏱️ Duración: {duracionSeg}s</Text>
+            <Text style={styles.cardText}>
+              📊 Leídos: {item.registrosLeidos || 0} | 💾 Guardados:{' '}
+              {item.registrosGuardados || 0} | 🔄 Actualizados:{' '}
+              {item.registrosActualizados || 0}
+            </Text>
+            <Text style={styles.cardText}>
+              📈 Total procesados: {totalRegistros}
+            </Text>
+            {!item.exitoso && item.razon && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>❌ {item.razon}</Text>
+              </View>
+            )}
+            {item.endpoint && (
+              <Text
+                style={[styles.cardText, { fontSize: 11, color: COLORS.muted }]}
+              >
+                🌐 {item.endpoint}
+              </Text>
+            )}
+            {item.detalles && (
+              <Text
+                style={[styles.cardText, { fontSize: 10, color: COLORS.muted }]}
+              >
+                📋 {JSON.stringify(item.detalles)}
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderItem = ({ item }: { item: any }) => {
     switch (selectedTab) {
       case 'syncLogs':
         return renderSyncLog({ item });
+      case 'bitacora':
+        return renderBitacora({ item });
       case 'ventas':
         return renderVenta({ item });
       case 'clientes':
@@ -639,6 +721,11 @@ const styles = StyleSheet.create({
     padding: SPACING.m,
     marginBottom: SPACING.m,
     ...SHADOWS.small,
+  },
+  cardError: {
+    backgroundColor: '#FFEBEE',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.error,
   },
   cardHeader: {
     flexDirection: 'row',

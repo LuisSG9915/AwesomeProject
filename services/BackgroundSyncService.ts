@@ -1,20 +1,23 @@
 /**
  * BackgroundSyncService
  *
- * Servicio para sincronización automática en segundo plano cada 3 minutos.
- * Funciona incluso con la pantalla apagada o en modo suspensión.
- *
- * Características:
- * - Sincronización automática cada 3 minutos
- * - Estado observable para UI
- * - Manejo de errores robusto
- * - Logs detallados para debugging
+ * Servicio UNIFICADO para sincronización automática.
+ * 
+ * Arquitectura:
+ * - Primer plano: setInterval cada 3 minutos (preciso)
+ * - Segundo plano: BackgroundFetch + HeadlessTask en index.js
+ * 
+ * IMPORTANTE: La sincronización real se delega a FullSyncService.syncAll()
+ * que maneja la arquitectura escalable con:
+ * - SyncOrchestrator para dependencias
+ * - SyncLog principal y SyncTableLog por tabla
+ * - Retry logic con exponential backoff
  */
 
-import FullSyncService, { SyncProgress } from './FullSyncService';
+import FullSyncService from './FullSyncService';
+import { SyncProgress } from './sync/SyncTask';
 import AuthService from './AuthService';
-import Realm from 'realm';
-import { SyncLogSchema } from './RealmSchemas';
+import BackgroundFetch from 'react-native-background-fetch';
 
 export type SyncStatus =
   | 'idle' // No sincronizando
@@ -38,9 +41,12 @@ class BackgroundSyncService {
 
   // Configuración
   private readonly SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
+  private readonly SYNC_INTERVAL_MINUTES = 3; // Para BackgroundFetch
+  private readonly BACKGROUND_FETCH_TASK_ID = 'com.awesomeproject.sync';
 
   // Estado interno
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private isBackgroundFetchConfigured = false;
   private state: BackgroundSyncState = {
     status: 'idle',
     lastSyncTime: null,
@@ -64,9 +70,10 @@ class BackgroundSyncService {
 
   /**
    * Inicia la sincronización automática en segundo plano
+   * Usa react-native-background-fetch para funcionar con pantalla apagada
    */
-  start(): void {
-    if (this.intervalId) {
+  async start(): Promise<void> {
+    if (this.intervalId && this.isBackgroundFetchConfigured) {
       console.log('[BackgroundSync] Ya está activo');
       return;
     }
@@ -82,13 +89,88 @@ class BackgroundSyncService {
       nextSyncTime: nextSync,
     });
 
-    // Configurar intervalo
+    // Configurar BackgroundFetch para sincronización con pantalla apagada
+    await this.configureBackgroundFetch();
+
+    // También usar intervalo para cuando la app está en primer plano (más preciso)
     this.intervalId = setInterval(() => {
       this.performSync();
     }, this.SYNC_INTERVAL_MS);
 
     // Ejecutar primera sincronización inmediatamente
     this.performSync();
+  }
+
+  /**
+   * Configura react-native-background-fetch para sincronización en segundo plano
+   * 
+   * NOTA: El HeadlessTask está registrado en index.js (nivel superior)
+   * Este método solo configura el intervalo y callbacks de la app activa
+   */
+  private async configureBackgroundFetch(): Promise<void> {
+    if (this.isBackgroundFetchConfigured) {
+      return;
+    }
+
+    try {
+      // Configurar BackgroundFetch
+      const status = await BackgroundFetch.configure(
+        {
+          minimumFetchInterval: this.SYNC_INTERVAL_MINUTES, // Intervalo mínimo en minutos
+          stopOnTerminate: false, // Continuar después de cerrar la app
+          startOnBoot: true, // Iniciar al reiniciar el dispositivo
+          enableHeadless: true, // Permite ejecución sin UI (HeadlessTask en index.js)
+          forceAlarmManager: true, // Usar AlarmManager para mayor precisión en Android
+          requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY, // Requiere conexión de red
+        },
+        async (taskId) => {
+          // Este callback se ejecuta cuando la app está activa
+          console.log('[BackgroundFetch] Tarea recibida (app activa):', taskId);
+          
+          try {
+            await this.performSync();
+          } catch (error) {
+            console.error('[BackgroundFetch] Error en sincronización:', error);
+          }
+          
+          // IMPORTANTE: Siempre llamar finish() cuando termine
+          BackgroundFetch.finish(taskId);
+        },
+        async (taskId) => {
+          // Callback de timeout - la tarea tomó demasiado tiempo
+          console.warn('[BackgroundFetch] Timeout de tarea:', taskId);
+          BackgroundFetch.finish(taskId);
+        }
+      );
+
+      // Verificar estado de BackgroundFetch
+      const statusText = this.getBackgroundFetchStatusText(status);
+      console.log('[BackgroundFetch] Estado:', statusText);
+
+      // NOTA: HeadlessTask está registrado en index.js, no aquí
+      // Esto evita duplicación y asegura que funcione cuando la app está cerrada
+
+      this.isBackgroundFetchConfigured = true;
+      console.log('[BackgroundFetch] Configurado exitosamente');
+    } catch (error) {
+      console.error('[BackgroundFetch] Error al configurar:', error);
+    }
+  }
+
+  /**
+   * Obtiene texto descriptivo del estado de BackgroundFetch
+   */
+  private getBackgroundFetchStatusText(status: number): string {
+    switch (status) {
+      case BackgroundFetch.STATUS_RESTRICTED:
+        return 'Restringido (configuración del sistema)';
+      case BackgroundFetch.STATUS_DENIED:
+        return 'Denegado (el usuario debe habilitarlo)';
+      case BackgroundFetch.STATUS_AVAILABLE:
+        return 'Disponible';
+      default:
+        return 'Desconocido';
+    }
   }
 
   /**
@@ -139,7 +221,7 @@ class BackgroundSyncService {
    * Ejecuta una sincronización manual (no afecta el intervalo automático)
    */
   async syncNow(): Promise<void> {
-    await this.performSync('manual');
+    await this.performSync();
   }
 
   /**
@@ -162,71 +244,20 @@ class BackgroundSyncService {
   }
 
   /**
-   * Crea un log de sincronización en Realm
-   */
-  private async createSyncLog(logData: {
-    fechaInicio: Date;
-    fechaFinal: Date | null;
-    exitoso: boolean;
-    razon: string | null;
-    usuario: string | null;
-    ruta: string;
-    sucursal: number | null;
-    totalRegistros: number | null;
-    tipo: 'manual' | 'automatica';
-    detalles: any;
-  }): Promise<void> {
-    try {
-      const realm = await Realm.open({
-        schema: [SyncLogSchema],
-        schemaVersion: 1,
-      });
-
-      const duracionMs = logData.fechaFinal
-        ? logData.fechaFinal.getTime() - logData.fechaInicio.getTime()
-        : null;
-
-      realm.write(() => {
-        realm.create('SyncLog', {
-          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          fechaInicio: logData.fechaInicio,
-          fechaFinal: logData.fechaFinal,
-          exitoso: logData.exitoso,
-          razon: logData.razon,
-          usuario: logData.usuario,
-          ruta: logData.ruta,
-          sucursal: logData.sucursal,
-          totalRegistros: logData.totalRegistros,
-          duracionMs,
-          tipo: logData.tipo,
-          detalles: JSON.stringify(logData.detalles),
-        });
-      });
-
-      realm.close();
-      console.log('[BackgroundSync] Log de sincronización guardado');
-    } catch (error) {
-      console.error('[BackgroundSync] Error al guardar log:', error);
-    }
-  }
-
-  /**
    * Ejecuta el proceso de sincronización
+   * 
+   * NOTA: Delega toda la lógica a FullSyncService.syncAll() que maneja:
+   * - SyncLog principal
+   * - SyncTableLog por tabla  
+   * - Retry logic con exponential backoff
+   * - Dependencias entre tablas
    */
-  private async performSync(
-    tipo: 'manual' | 'automatica' = 'automatica',
-  ): Promise<void> {
+  private async performSync(): Promise<void> {
     // Evitar sincronizaciones concurrentes
     if (this.state.status === 'syncing') {
       console.log('[BackgroundSync] Ya hay una sincronización en curso');
       return;
     }
-
-    const fechaInicio = new Date();
-    let user: any = null;
-    let sucursal: number | null = null;
-    let totalRegistros = 0;
-    let detalles: any = {};
 
     console.log('[BackgroundSync] Iniciando sincronización...');
 
@@ -238,60 +269,54 @@ class BackgroundSyncService {
 
     try {
       // Obtener usuario y sucursal
-      user = await AuthService.restoreSession();
+      const user = await AuthService.restoreSession();
       if (!user) {
         throw new Error('No hay sesión activa');
       }
 
-      sucursal = user.sucursal_origen || user.sucursal || 1;
-      const usuario = user.claveEmpleado || user.nombre || 'Desconocido';
-      const ruta = `https://cbinfo.no-ip.info:9011/api/MovilesVentas/ventas-full/${sucursal}`;
-
+      const sucursal = user.sucursal_origen || user.sucursal || 1;
       console.log('[BackgroundSync] Sincronizando sucursal:', sucursal);
 
-      // Ejecutar sincronización
-      await FullSyncService.syncAll(sucursal!, (progress: SyncProgress) => {
+      // Ejecutar sincronización usando arquitectura escalable
+      // FullSyncService.syncAll() ya maneja:
+      // - SyncLog principal
+      // - SyncTableLog por cada tabla
+      // - Retry logic con exponential backoff
+      // - Manejo de dependencias
+      const result = await FullSyncService.syncAll(sucursal, (progress: SyncProgress) => {
         this.updateState({
           currentProgress: progress,
         });
-        totalRegistros += progress.current;
-        detalles[progress.entity] = progress.total;
       });
 
-      // Sincronización exitosa
-      const fechaFinal = new Date();
+      // Actualizar estado según resultado
       const now = new Date();
       const nextSync = new Date(now.getTime() + this.SYNC_INTERVAL_MS);
 
-      this.updateState({
-        status: 'success',
-        lastSyncTime: now,
-        nextSyncTime: nextSync,
-        currentProgress: null,
-        errorMessage: null,
-        syncCount: this.state.syncCount + 1,
-      });
-
-      console.log('[BackgroundSync] Sincronización completada exitosamente');
-
-      // Guardar log exitoso
-      await this.createSyncLog({
-        fechaInicio,
-        fechaFinal,
-        exitoso: true,
-        razon: null,
-        usuario,
-        ruta,
-        sucursal,
-        totalRegistros,
-        tipo,
-        detalles,
-      });
+      if (result.success) {
+        this.updateState({
+          status: 'success',
+          lastSyncTime: now,
+          nextSyncTime: nextSync,
+          currentProgress: null,
+          errorMessage: null,
+          syncCount: this.state.syncCount + 1,
+        });
+        console.log('[BackgroundSync] Sincronización completada exitosamente');
+      } else {
+        this.updateState({
+          status: 'error',
+          lastSyncTime: now,
+          nextSyncTime: nextSync,
+          currentProgress: null,
+          errorMessage: result.error || 'Error desconocido',
+        });
+        console.log('[BackgroundSync] Sincronización completada con errores:', result.error);
+      }
     } catch (error: any) {
       const errorMsg = error?.message || 'Error desconocido';
-      console.error('[BackgroundSync] Error en sincronización:', errorMsg);
+      console.error('[BackgroundSync] Error crítico en sincronización:', errorMsg);
 
-      const fechaFinal = new Date();
       const nextSync = new Date(Date.now() + this.SYNC_INTERVAL_MS);
 
       this.updateState({
@@ -299,22 +324,6 @@ class BackgroundSyncService {
         nextSyncTime: nextSync,
         currentProgress: null,
         errorMessage: errorMsg,
-      });
-
-      // Guardar log de error
-      await this.createSyncLog({
-        fechaInicio,
-        fechaFinal,
-        exitoso: false,
-        razon: errorMsg,
-        usuario: user?.claveEmpleado || user?.nombre || 'Desconocido',
-        ruta: sucursal
-          ? `https://cbinfo.no-ip.info:9011/api/MovilesVentas/ventas-full/${sucursal}`
-          : 'N/A',
-        sucursal,
-        totalRegistros,
-        tipo,
-        detalles: { error: errorMsg, stack: error?.stack },
       });
     }
   }

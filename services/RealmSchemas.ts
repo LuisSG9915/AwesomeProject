@@ -152,6 +152,30 @@ export const SyncLogSchema = {
   primaryKey: 'id',
 };
 
+/**
+ * Schema para logs de sincronización por tabla
+ * Registra cada sincronización individual con detalles específicos
+ */
+export const SyncTableLogSchema = {
+  name: 'SyncTableLog',
+  properties: {
+    id: 'string', // UUID único
+    syncLogId: 'string', // Referencia al SyncLog principal
+    tabla: 'string', // Nombre de la tabla sincronizada
+    fechaInicio: 'date', // Fecha y hora de inicio de esta tabla
+    fechaFinal: 'date?', // Fecha y hora de finalización
+    exitoso: 'bool', // Si fue exitoso o no
+    razon: 'string?', // Razón específica si falló
+    registrosLeidos: 'int?', // Total de registros leídos de la API
+    registrosGuardados: 'int?', // Total de registros guardados en Realm
+    registrosActualizados: 'int?', // Total de registros actualizados
+    duracionMs: 'int?', // Duración en milisegundos
+    endpoint: 'string?', // Endpoint específico de esta tabla
+    detalles: 'string?', // JSON con detalles adicionales
+  },
+  primaryKey: 'id',
+};
+
 export const ALL_SCHEMAS = [
   VentaSchema,
   UsuarioSchema,
@@ -162,4 +186,5 @@ export const ALL_SCHEMAS = [
   ClienteFullSchema,
   SyncStatusSchema,
   SyncLogSchema,
+  SyncTableLogSchema,
 ];

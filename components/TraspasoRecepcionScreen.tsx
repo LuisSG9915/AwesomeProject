@@ -284,7 +284,7 @@ export default function TraspasoRecepcionScreen() {
         throw new Error(msg);
       }
 
-      await FullSyncService.syncInventario(sucursal);
+      // await FullSyncService.syncInventario(sucursal);
       await loadTraspasos();
       setModalOpen(false);
 

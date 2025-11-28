@@ -1,13 +1,7 @@
 import Realm, { UpdateMode } from 'realm';
-import { ALL_SCHEMAS } from './RealmSchemas';
-
-export interface SyncProgress {
-  current: number;
-  total: number;
-  entity: string;
-  status: 'syncing' | 'completed' | 'error';
-  message?: string;
-}
+import { ALL_SCHEMAS, SyncLogSchema } from './RealmSchemas';
+import { SyncOrchestrator } from './sync/SyncOrchestrator';
+import { SyncProgress } from './sync/SyncTask';
 
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
@@ -25,7 +19,7 @@ class FullSyncService {
       this.realm = await Realm.open({
         path: 'FullSyncDB',
         schema: ALL_SCHEMAS,
-        schemaVersion: 4,
+        schemaVersion: 5, // Actualizado para incluir SyncTableLogSchema
         onMigration: (oldRealm: Realm, newRealm: Realm) => {
           const newCartera = newRealm.objects('Cartera');
           for (let i = 0; i < newCartera.length; i++) {
@@ -38,13 +32,17 @@ class FullSyncService {
       });
 
       this.isInitialized = true;
-      console.log('✅ FullSyncService inicializado correctamente');
+      console.log('✅ FullSyncService inicializado correctamente (v5 con SyncTableLog)');
     } catch (error) {
       console.error('❌ Error al inicializar FullSyncService:', error);
       throw error;
     }
   }
 
+  /**
+   * Sincroniza todas las tablas usando la nueva arquitectura escalable
+   * Maneja dependencias, prioridades y bitácora detallada por tabla
+   */
   async syncAll(
     sucursal: number = 1,
     onProgress?: SyncProgressCallback,
@@ -53,82 +51,84 @@ class FullSyncService {
       await this.initialize();
     }
 
-    const syncTasks = [
-      { name: 'Usuarios', fn: () => this.syncUsuarios() },
-      { name: 'Productos', fn: () => this.syncProductos() },
-      { name: 'Precios', fn: () => this.syncPrecios() },
-      { name: 'Clientes', fn: () => this.syncClientesFull() },
-      { name: 'Inventario', fn: () => this.syncInventario(sucursal) },
-      { name: 'Cartera', fn: () => this.syncCartera() },
-      { name: 'Ventas', fn: () => this.syncVentas(sucursal) },
-    ];
+    if (!this.realm) {
+      throw new Error('Realm no inicializado');
+    }
 
-    const total = syncTasks.length;
-    let current = 0;
+    // Crear SyncLog principal
+    const syncLogId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const fechaInicio = new Date();
 
     try {
-      for (const task of syncTasks) {
-        current++;
-
-        if (onProgress) {
-          onProgress({
-            current,
-            total,
-            entity: task.name,
-            status: 'syncing',
-            message: `Sincronizando ${task.name}...`,
-          });
-        }
-
-        const result = await task.fn();
-
-        if (!result.success) {
-          if (onProgress) {
-            onProgress({
-              current,
-              total,
-              entity: task.name,
-              status: 'error',
-              message: result.error || 'Error desconocido',
-            });
-          }
-          console.warn(`⚠️ Error al sincronizar ${task.name}:`, result.error);
-        } else {
-          if (onProgress) {
-            onProgress({
-              current,
-              total,
-              entity: task.name,
-              status: 'completed',
-              message: `${task.name} sincronizado (${
-                result.count || 0
-              } registros)`,
-            });
-          }
-        }
-      }
-
-      // Actualizar estado de sincronización
-      this.updateSyncStatus('all', true);
-
-      if (onProgress) {
-        onProgress({
-          current: total,
-          total,
-          entity: 'Completado',
-          status: 'completed',
-          message: '✅ Sincronización completa exitosa',
+      // Guardar log inicial
+      this.realm.write(() => {
+        this.realm!.create('SyncLog', {
+          id: syncLogId,
+          fechaInicio,
+          exitoso: true, // Se actualizará si hay errores
+          tipo: 'automatica',
         });
-      }
+      });
 
-      return { success: true };
+      console.log(`[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`);
+
+      // Crear orquestador y ejecutar todas las tareas
+      const orchestrator = new SyncOrchestrator(
+        this.realm,
+        syncLogId,
+        sucursal,
+        onProgress,
+      );
+
+      const result = await orchestrator.executeAll();
+
+      // Actualizar log final
+      const fechaFinal = new Date();
+      const totalRegistros = Array.from(result.results.values())
+        .reduce((sum, r) => sum + (r.registrosGuardados || 0) + (r.registrosActualizados || 0), 0);
+
+      this.realm.write(() => {
+        const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+        if (log) {
+          log.fechaFinal = fechaFinal;
+          log.exitoso = result.success;
+          log.totalRegistros = totalRegistros;
+          log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+          if (!result.success) {
+            log.razon = result.errors.join('; ');
+          }
+        }
+      });
+
+      console.log(`[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`);
+
+      return {
+        success: result.success,
+        error: result.success ? undefined : result.errors.join('; '),
+      };
     } catch (error: any) {
       console.error('❌ Error durante la sincronización completa:', error);
 
+      // Actualizar log con error crítico
+      const fechaFinal = new Date();
+      try {
+        this.realm.write(() => {
+          const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+          if (log) {
+            log.fechaFinal = fechaFinal;
+            log.exitoso = false;
+            log.razon = error?.message || 'Error desconocido';
+            log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+          }
+        });
+      } catch (logError) {
+        console.error('[FullSyncService] Error al actualizar log:', logError);
+      }
+
       if (onProgress) {
         onProgress({
-          current,
-          total,
+          current: 0,
+          total: 0,
           entity: 'Error',
           status: 'error',
           message: error?.message || 'Error durante la sincronización',
@@ -139,377 +139,99 @@ class FullSyncService {
     }
   }
 
-  private async syncVentas(
-    sucursal: number,
-  ): Promise<{ success: boolean; error?: string; count?: number }> {
-    try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/ventas-full/${sucursal}`,
-      );
-      console.log(
-        this.apiBaseUrl + `/api/MovilesVentas/ventas-full/${sucursal}`,
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log(data);
-
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      const localIdThreshold = Date.now();
-
-      this.realm!.write(() => {
-        // Limpiar ventas anteriores de esta sucursal (solo ids "normales")
-        const existingVentas = this.realm!.objects('Venta').filtered(
-          'sucursal == $0 AND id <= $1',
-          sucursal,
-          localIdThreshold,
-        );
-        this.realm!.delete(existingVentas);
-
-        // Insertar nuevas ventas
-        data.forEach((venta: any) => {
-          this.realm!.create('Venta', {
-            id: venta.id,
-            idMovil: venta.idMovil ?? null,
-            sucursal: venta.sucursal,
-            noVenta: venta.noVenta,
-            claveProd: venta.claveProd,
-            nombreProducto: venta.nombreProducto,
-            cantProducto: venta.cantProducto,
-            precio: venta.precio,
-            importe: venta.importe,
-            cveCliente: venta.cveCliente,
-            nombreCliente: venta.nombreCliente,
-            fecha: venta.fecha ? new Date(venta.fecha) : null,
-            tipoPago: venta.tipoPago,
-            descripcionMedioPago: venta.descripcionMedioPago,
-            vendedor: venta.vendedor,
-            folioFactura: venta.folioFactura ?? false,
-            facturacionMovil: venta.facturacionMovil ?? false,
-            syncedAt: new Date(),
-          });
-        });
-      });
-
-      console.log(`✅ Ventas sincronizadas: ${data.length} registros`);
-      return { success: true, count: data.length };
-    } catch (error: any) {
-      console.error('❌ Error al sincronizar ventas:', error);
-      return { success: false, error: error?.message };
+  /**
+   * Sincroniza una tabla específica
+   * Útil para sincronizaciones manuales o selectivas
+   */
+  async syncTable(
+    tableName: string,
+    sucursal: number = 1,
+    onProgress?: SyncProgressCallback,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.isInitialized) {
+      await this.initialize();
     }
-  }
 
-  private async syncUsuarios(): Promise<{
-    success: boolean;
-    error?: string;
-    count?: number;
-  }> {
-    try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/usuarios-full`,
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      this.realm!.write(() => {
-        data.forEach((usuario: any) => {
-          this.realm!.create(
-            'Usuario',
-            {
-              id: usuario.id,
-              nombre: usuario.nombre,
-              perfil: usuario.perfil,
-              descripcionPerfil: usuario.descripcionPerfil,
-              puesto: usuario.puesto,
-              descripcionPuesto: usuario.descripcionPuesto,
-              claveEmpleado: usuario.claveEmpleado,
-              password: usuario.password,
-              sucursalOrigen: usuario.sucursalOrigen,
-              syncedAt: new Date(),
-            },
-            UpdateMode.Modified,
-          );
-        });
-      });
-
-      console.log(`✅ Usuarios sincronizados: ${data.length} registros`);
-      return { success: true, count: data.length };
-    } catch (error: any) {
-      console.error('❌ Error al sincronizar usuarios:', error);
-      return { success: false, error: error?.message };
+    if (!this.realm) {
+      throw new Error('Realm no inicializado');
     }
-  }
 
-  private async syncProductos(): Promise<{
-    success: boolean;
-    error?: string;
-    count?: number;
-  }> {
+    // Crear SyncLog principal
+    const syncLogId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const fechaInicio = new Date();
+
     try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/productos-full`,
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      this.realm!.write(() => {
-        data.forEach((producto: any) => {
-          this.realm!.create(
-            'Producto',
-            {
-              id: producto.id,
-              claveProd: producto.claveProd,
-              descripcion: producto.descripcion,
-              esKit: producto.esKit ?? false,
-              fechaAct: producto.fechaAct ? new Date(producto.fechaAct) : null,
-              syncedAt: new Date(),
-            },
-            UpdateMode.Modified,
-          );
+      // Guardar log inicial
+      this.realm.write(() => {
+        this.realm!.create('SyncLog', {
+          id: syncLogId,
+          fechaInicio,
+          exitoso: true,
+          tipo: 'manual',
         });
       });
 
-      console.log(`✅ Productos sincronizados: ${data.length} registros`);
-      return { success: true, count: data.length };
-    } catch (error: any) {
-      console.error('❌ Error al sincronizar productos:', error);
-      return { success: false, error: error?.message };
-    }
-  }
+      console.log(`[FullSyncService] Iniciando sincronización de tabla: ${tableName} (ID: ${syncLogId})`);
 
-  private async syncPrecios(): Promise<{
-    success: boolean;
-    error?: string;
-    count?: number;
-  }> {
-    try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/precios-full`,
+      // Crear orquestador y ejecutar tarea específica
+      const orchestrator = new SyncOrchestrator(
+        this.realm,
+        syncLogId,
+        sucursal,
+        onProgress,
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      const result = await orchestrator.executeTask(tableName);
+
+      if (!result) {
+        throw new Error(`Tabla no encontrada: ${tableName}`);
       }
 
-      const data = await response.json();
+      // Actualizar log final
+      const fechaFinal = new Date();
+      const totalRegistros = (result.registrosGuardados || 0) + (result.registrosActualizados || 0);
 
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      this.realm!.write(() => {
-        data.forEach((precio: any) => {
-          this.realm!.create(
-            'Precio',
-            {
-              id: String(precio.id),
-              descripcion: precio.descripcion,
-              idCliente: precio.idCliente,
-              claveProd: precio.claveProd,
-              precio: precio.precio,
-              fechaAct: precio.fechaAct ? new Date(precio.fechaAct) : null,
-              syncedAt: new Date(),
-            },
-            UpdateMode.Modified,
-          );
-        });
+      this.realm.write(() => {
+        const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+        if (log) {
+          log.fechaFinal = fechaFinal;
+          log.exitoso = result.success;
+          log.totalRegistros = totalRegistros;
+          log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+          if (!result.success) {
+            log.razon = result.error || 'Error desconocido';
+          }
+        }
       });
 
-      console.log(`✅ Precios sincronizados: ${data.length} registros`);
-      return { success: true, count: data.length };
+      console.log(`[FullSyncService] Sincronización de ${tableName} completada. Éxito: ${result.success}`);
+
+      return {
+        success: result.success,
+        error: result.success ? undefined : result.error,
+      };
     } catch (error: any) {
-      console.error('❌ Error al sincronizar precios:', error);
-      return { success: false, error: error?.message };
-    }
-  }
-
-  async syncInventario(
-    sucursal: number,
-    fechaMovto?: string,
-  ): Promise<{ success: boolean; error?: string; count?: number }> {
-    try {
-      // Si no se proporciona fecha, usar fecha LOCAL (YYYY-MM-DD) del dispositivo
-      const effectiveFechaMovto =
-        fechaMovto ??
-        (() => {
-          const now = new Date();
-          const yyyy = now.getFullYear();
-          const mm = String(now.getMonth() + 1).padStart(2, '0');
-          const dd = String(now.getDate()).padStart(2, '0');
-          return `${yyyy}-${mm}-${dd}`;
-        })();
-
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${effectiveFechaMovto}`,
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      console.log(data);
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      const localIdThreshold = Date.now();
-      const unsyncedSentinel = new Date(0);
-
-      this.realm!.write(() => {
-        // Limpiar inventario anterior de TODAS las sucursales.
-        // Se borran:
-        // - Todos los registros con id "normal" (<= Date.now()).
-        // - Cualquier registro ya sincronizado (syncedAt != fecha centinela),
-        //   incluso si su id es mayor a Date.now().
-        // Se conservan únicamente los movimientos locales no sincronizados
-        // (id > Date.now() y syncedAt == new Date(0)).
-        const existingInventario = this.realm!.objects('Inventario').filtered(
-          'id <= $0 OR syncedAt != $1',
-          localIdThreshold,
-          unsyncedSentinel,
-        );
-        this.realm!.delete(existingInventario);
-
-        // Insertar nuevo inventario
-        data.forEach((inventario: any) => {
-          this.realm!.create('Inventario', {
-            id: inventario.id,
-            sucursal: inventario.sucursal,
-            claveProd: inventario.claveProd,
-            fechaArrastre: inventario.fechaArrastre
-              ? new Date(inventario.fechaArrastre)
-              : null,
-            saldo: inventario.saldo,
-            descripcion: inventario.descripcion ?? null,
-            syncedAt: new Date(),
-          });
+      // Actualizar log con error
+      const fechaFinal = new Date();
+      try {
+        this.realm.write(() => {
+          const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+          if (log) {
+            log.fechaFinal = fechaFinal;
+            log.exitoso = false;
+            log.razon = error?.message || 'Error desconocido';
+            log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+          }
         });
-      });
-
-      console.log(`✅ Inventario sincronizado: ${data.length} registros`);
-      return { success: true, count: data.length };
-    } catch (error: any) {
-      console.error('❌ Error al sincronizar inventario:', error);
-      return { success: false, error: error?.message };
-    }
-  }
-
-  private async syncCartera(): Promise<{
-    success: boolean;
-    error?: string;
-    count?: number;
-  }> {
-    try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/cartera-full`,
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      } catch (logError) {
+        console.error('[FullSyncService] Error al actualizar log:', logError);
       }
 
-      const data = await response.json();
-
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      this.realm!.write(() => {
-        data.forEach((cartera: any) => {
-          this.realm!.create(
-            'Cartera',
-            {
-              id: cartera.id,
-              idCliente: cartera.idCliente,
-              nombreCliente: cartera.nombreCliente,
-              sucursal: cartera.sucursal,
-              sucursalSegmento: cartera.sucursalSegmento,
-              saldo: cartera.saldo,
-              fecha: cartera.fecha ? new Date(cartera.fecha) : null,
-              idSegmento: cartera.idSegmento,
-              noVenta: cartera.noVenta,
-              syncedAt: new Date(),
-            },
-            UpdateMode.Modified,
-          );
-        });
-      });
-
-      console.log(`✅ Cartera sincronizada: ${data.length} registros`);
-      return { success: true, count: data.length };
-    } catch (error: any) {
-      console.error('❌ Error al sincronizar cartera:', error);
-      return { success: false, error: error?.message };
-    }
-  }
-
-  private async syncClientesFull(): Promise<{
-    success: boolean;
-    error?: string;
-    count?: number;
-  }> {
-    try {
-      const response = await fetch(
-        `${this.apiBaseUrl}/api/MovilesVentas/clientes-full`,
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (!Array.isArray(data)) {
-        throw new Error('Respuesta inválida del servidor');
-      }
-
-      this.realm!.write(() => {
-        data.forEach((cliente: any) => {
-          this.realm!.create(
-            'ClienteFull',
-            {
-              id: cliente.id,
-              nombre: cliente.nombre,
-              longitud: cliente.longitud ?? 0,
-              latitud: cliente.latitud ?? 0,
-              idGrupo: cliente.idGrupo,
-              credito: cliente.credito ?? false,
-              facturacionMovil: cliente.facturacionMovil ?? false,
-              fechaAct: cliente.fechaAct ? new Date(cliente.fechaAct) : null,
-              syncedAt: new Date(),
-            },
-            UpdateMode.Modified,
-          );
-        });
-      });
-
-      console.log(`✅ Clientes sincronizados: ${data.length} registros`);
-      return { success: true, count: data.length };
-    } catch (error: any) {
-      console.error('❌ Error al sincronizar clientes:', error);
-      return { success: false, error: error?.message };
+      console.error(`[FullSyncService] Error en sincronización de ${tableName}:`, error);
+      return {
+        success: false,
+        error: error?.message || 'Error desconocido',
+      };
     }
   }
 
@@ -946,6 +668,16 @@ class FullSyncService {
   getSyncStatus(entity: string = 'all'): any {
     if (!this.isInitialized || !this.realm) return null;
     return this.realm.objectForPrimaryKey('SyncStatus', entity);
+  }
+
+  getSyncTableLogsPaginated(offset: number = 0, limit: number = 50): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(
+      this.realm
+        .objects('SyncTableLog')
+        .sorted('fechaInicio', true) // Más recientes primero
+        .slice(offset, offset + limit),
+    );
   }
 
   getStats(): any {
