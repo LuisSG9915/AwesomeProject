@@ -13,6 +13,7 @@ import { Icon } from 'react-native-elements';
 import TicketPrinter from '../services/TicketPrinter';
 import BluetoothPrinterService from '../services/BluetoothPrinterService';
 import FullSyncService from '../services/FullSyncService';
+import AuthService from '../services/AuthService';
 import {
   COLORS,
   SPACING,
@@ -32,10 +33,12 @@ type PrecorteItem = {
 
 export default function PrecorteScreen() {
   const today = useMemo(() => {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
+    const now = new Date();
+    // Usar métodos locales que ya consideran la zona horaria del sistema
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    console.log('Fecha actual en horario local:', yyyy, mm, dd);
     return `${yyyy}-${mm}-${dd}`;
   }, []);
 
@@ -59,7 +62,7 @@ export default function PrecorteScreen() {
 
       await FullSyncService.initialize();
       const inventario = FullSyncService.getInventario(500) || [];
-
+      consoleRealm('Inventario', inventario);
       // Filtrar por fechaArrastre dentro del día seleccionado
       const inventarioFiltrado = inventario.filter((inv: any) => {
         const fa = inv.fechaArrastre;
@@ -83,8 +86,12 @@ export default function PrecorteScreen() {
 
       setItems(mapped);
 
-      // Calcular total efectivo desde ventas (tipoPago 1) para la fecha seleccionada
-      const totalEf = FullSyncService.getVentasTotalEfectivoForDate(startOfDay);
+      // Calcular total efectivo desde ventas (tipoPago 1) para la fecha seleccionada y sucursal actual
+      const currentUser = AuthService.currentUser;
+      const totalEf = FullSyncService.getVentasTotalEfectivoForDate(
+        startOfDay,
+        currentUser?.sucursal_origen || undefined,
+      );
       setTotalEfectivo(totalEf);
     } catch (error) {
       console.error('Error al cargar inventario para precorte:', error);

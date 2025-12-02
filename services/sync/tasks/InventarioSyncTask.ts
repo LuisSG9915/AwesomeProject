@@ -18,9 +18,9 @@ export class InventarioSyncTask extends SyncTask {
   }
 
   getEndpoint(): string {
-    return `https://cbinfo.no-ip.info:9011/api/MovilesVentas/inventario-erp-movil/${this.sucursal}&fecha=${new Date().toISOString()}`;
+    return `https://cbinfo.no-ip.info:9011/api/MovilesVentas/inventario-erp-movil/${this.sucursal}?fechaMovto=${new Date().toISOString()}`;
   }
-
+// fechaMovto
   getPriority(): number {
     return 5; // Quinta prioridad
   }

@@ -40,7 +40,7 @@ class BackgroundSyncService {
   private static instance: BackgroundSyncService;
 
   // Configuración
-  private readonly SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
+  private readonly SYNC_INTERVAL_MS = 1 * 60 * 1000; // 3 minutos
   private readonly SYNC_INTERVAL_MINUTES = 3; // Para BackgroundFetch
   private readonly BACKGROUND_FETCH_TASK_ID = 'com.awesomeproject.sync';
 

@@ -410,40 +410,30 @@ export default function TraspasoRecepcionScreen() {
           style={{ marginBottom: SPACING.s }}
         >
           <View style={styles.rowWrap}>
-            <TouchableOpacity
-              style={[styles.pill, formFiltro.sucursal === 0 && styles.pillOn]}
-              onPress={() => setFormFiltro({ ...formFiltro, sucursal: 0 })}
-            >
-              <Text
-                style={[
-                  styles.pillText,
-                  formFiltro.sucursal === 0 && styles.pillTextOn,
-                ]}
-              >
-                Todas
-              </Text>
-            </TouchableOpacity>
-            {sucursales.map(s => (
-              <TouchableOpacity
-                key={s.id_sucursal}
-                style={[
-                  styles.pill,
-                  formFiltro.sucursal === s.id_sucursal && styles.pillOn,
-                ]}
-                onPress={() =>
-                  setFormFiltro({ ...formFiltro, sucursal: s.id_sucursal })
-                }
-              >
-                <Text
+            {sucursales
+              .filter(s => s.id_sucursal == currentSucursal)
+              .map(s => (
+                <TouchableOpacity
+                  key={s.id_sucursal}
                   style={[
-                    styles.pillText,
-                    formFiltro.sucursal === s.id_sucursal && styles.pillTextOn,
+                    styles.pill,
+                    formFiltro.sucursal === s.id_sucursal && styles.pillOn,
                   ]}
+                  onPress={() =>
+                    setFormFiltro({ ...formFiltro, sucursal: s.id_sucursal })
+                  }
                 >
-                  {s.nombre}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.pillText,
+                      formFiltro.sucursal === s.id_sucursal &&
+                        styles.pillTextOn,
+                    ]}
+                  >
+                    {s.nombre}
+                  </Text>
+                </TouchableOpacity>
+              ))}
           </View>
         </ScrollView>
         <TouchableOpacity style={styles.secondaryBtn} onPress={onConsultar}>

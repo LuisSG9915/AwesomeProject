@@ -37,7 +37,7 @@ export class VentasSyncTask extends SyncTask {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-
+      console.log(response)
       const ventas = await response.json();
       const registrosLeidos = ventas.length;
       let registrosGuardados = 0;
@@ -67,8 +67,8 @@ export class VentasSyncTask extends SyncTask {
       });
 
       console.log(`[VentasSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`);
-
-      return {
+console.log(ventas);   
+   return {
         success: true,
         registrosLeidos,
         registrosGuardados,

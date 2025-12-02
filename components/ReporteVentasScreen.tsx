@@ -16,6 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import TicketPrinter from '../services/TicketPrinter';
 import FullSyncService from '../services/FullSyncService';
 import FacturaService, { FacturaItem } from '../services/FacturaService';
+import AuthService from '../services/AuthService';
 import {
   COLORS,
   SPACING,
@@ -115,9 +116,27 @@ export default function ReporteVentasScreen() {
     try {
       setDebugInfo('Inicializando FullSyncService...');
       await FullSyncService.initialize();
-      setDebugInfo('Obteniendo ventas...');
-      const ventas = FullSyncService.getVentas(500);
-      setDebugInfo(`Ventas cargadas: ${ventas?.length || 0}`);
+
+      // Obtener sucursal del usuario actual
+      const currentUser = AuthService.currentUser;
+      const sucursalUsuario = currentUser?.sucursal_origen;
+
+      setDebugInfo('Obteniendo ventas por sucursal...');
+      let ventas;
+      if (sucursalUsuario !== undefined) {
+        ventas = FullSyncService.getVentasBySucursal(sucursalUsuario, 10000);
+        setDebugInfo(
+          `Ventas cargadas para sucursal ${sucursalUsuario}: ${
+            ventas?.length || 0
+          }`,
+        );
+      } else {
+        ventas = FullSyncService.getVentas(1000);
+        setDebugInfo(
+          `Ventas cargadas (todas las sucursales): ${ventas?.length || 0}`,
+        );
+      }
+
       setAllVentas(ventas);
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
@@ -158,6 +177,7 @@ export default function ReporteVentasScreen() {
   };
 
   const filtrarVentas = (soloLocales: boolean) => {
+    console.log('Filtrando ventas, soloLocales:', soloLocales);
     setLoading(true);
     setIsLocalView(soloLocales);
     try {
@@ -176,6 +196,10 @@ export default function ReporteVentasScreen() {
         return;
       }
 
+      // Obtener sucursal del usuario actual
+      const currentUser = AuthService.currentUser;
+      const sucursalUsuario = currentUser?.sucursal_origen;
+
       // Crear copias para no mutar los estados y normalizar rango a día completo
       const fecha1Parsed = new Date(fecha1);
       fecha1Parsed.setHours(0, 0, 0, 0);
@@ -187,22 +211,33 @@ export default function ReporteVentasScreen() {
         fecha1Parsed,
         fecha2Parsed,
         totalVentas: allVentas.length,
+        sucursalUsuario,
       });
       const filtered = allVentas.filter(venta => {
         if (!venta.fecha) return false;
         const ventaDate = new Date(venta.fecha);
-
         // Filtrar por fecha siempre
         const inDateRange =
           ventaDate >= fecha1Parsed && ventaDate <= fecha2Parsed;
 
+        // Filtrar por sucursal del usuario (si está definida)
+        const inSucursal =
+          sucursalUsuario === undefined || venta.sucursal === sucursalUsuario;
+
         if (soloLocales) {
           // Consultar Local: solo ventas con id >= threshold (ventas locales)
-          return inDateRange && venta.id && venta.id >= LOCAL_SALE_ID_THRESHOLD;
+          return (
+            inDateRange &&
+            inSucursal &&
+            venta.id &&
+            venta.id >= LOCAL_SALE_ID_THRESHOLD
+          );
         } else {
           // Consultar: solo ventas con id < threshold (ventas remotas/API)
           return (
-            inDateRange && (!venta.id || venta.id < LOCAL_SALE_ID_THRESHOLD)
+            inDateRange &&
+            inSucursal &&
+            (!venta.id || venta.id < LOCAL_SALE_ID_THRESHOLD)
           );
         }
       });

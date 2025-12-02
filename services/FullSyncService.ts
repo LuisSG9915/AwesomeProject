@@ -295,6 +295,17 @@ class FullSyncService {
     );
   }
 
+  getVentasBySucursal(sucursal: number, limit: number = 10000): any[] {
+    if (!this.isInitialized || !this.realm) return [];
+    return Array.from(
+      this.realm
+        .objects('Venta')
+        .filtered('sucursal == $0', sucursal)
+        .sorted('fecha', true)
+        .slice(0, limit),
+    );
+  }
+
   /**
    * Crea ventas locales en Realm (una fila por producto de la venta).
    * Se usa para registrar ventas hechas en el punto de venta antes de sincronizar.
@@ -595,20 +606,27 @@ class FullSyncService {
     );
   }
 
-  getVentasTotalEfectivoForDate(date: Date): number {
+  getVentasTotalEfectivoForDate(date: Date, sucursal?: number): number {
     if (!this.isInitialized || !this.realm) return 0;
 
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);
     const end = new Date(date);
     end.setHours(23, 59, 59, 999);
-    console.log(
-      Array.from(this.realm.objects('Venta').filtered('id > 1700000000')),
-    );
+  
+    let query = 'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and id < 17000000000';
+    const args: any[] = [start, end];
+    
+    if (sucursal !== undefined) {
+      query += ' AND sucursal == $2';
+      args.push(sucursal);
+    }
+    console.log(sucursal)
     const ventas = this.realm
       .objects('Venta')
-      .filtered('fecha >= $0 AND fecha <= $1 AND tipoPago == 1', start, end);
-
+      .filtered(query, ...args);
+console.log(ventas)
+consoleRealm('Venta:', ventas);
     let total = 0;
     for (let i = 0; i < ventas.length; i++) {
       const v: any = ventas[i];
