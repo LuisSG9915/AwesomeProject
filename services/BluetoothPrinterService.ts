@@ -395,6 +395,223 @@ class BluetoothPrinterService {
   }
 
   /**
+   * Imprime un código QR
+   */
+  async printQR(data: string, size: number = 6): Promise<boolean> {
+    if (!this.isConnected) {
+      console.warn('No hay impresora conectada para imprimir QR');
+      return false;
+    }
+
+    try {
+      // Centrar el QR
+      await BluetoothEscposPrinter.printText('\n', { align: 'center' });
+
+      // Imprimir QR usando el método de la librería
+      // size: 1-16 (tamaño del QR), errorLevel: 1=L, 2=M, 3=Q, 4=H
+      await BluetoothEscposPrinter.printQRCode(data, size, 3);
+
+      await BluetoothEscposPrinter.printText('\n', {});
+      return true;
+    } catch (error) {
+      console.error('Error printing QR:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Imprime un ticket CFDI con formato profesional y QR
+   */
+  async printCFDITicket(params: {
+    serie: string;
+    folio: string;
+    uuid?: string;
+    fecha?: string;
+    rfcEmisor?: string;
+    rfcReceptor?: string;
+    total?: number;
+    conceptos?: Array<{
+      descripcion: string;
+      cantidad: number;
+      precio: number;
+      importe: number;
+    }>;
+    qrUrl?: string;
+    selloDigital?: string;
+  }): Promise<boolean> {
+    if (!this.isConnected) {
+      Alert.alert('No Conectado', 'Selecciona una impresora primero');
+      return false;
+    }
+
+    try {
+      await BluetoothEscposPrinter.printerInit();
+      const w = 32; // ancho de caracteres
+      const sep = '='.repeat(w);
+      const sepLight = '-'.repeat(w);
+
+      // Función helper para centrar texto
+      const center = (text: string) => {
+        const pad = Math.max(0, Math.floor((w - text.length) / 2));
+        return ' '.repeat(pad) + text;
+      };
+
+      // Función helper para alinear izquierda-derecha
+      const leftRight = (left: string, right: string) => {
+        const space = Math.max(1, w - left.length - right.length);
+        return left + ' '.repeat(space) + right;
+      };
+
+      // ═══════════════ ENCABEZADO ═══════════════
+      await BluetoothEscposPrinter.printText(sep + '\n', {});
+      await BluetoothEscposPrinter.printText('FRESKY HIELO\n', {
+        align: 'center',
+        widthtimes: 1,
+      });
+      await BluetoothEscposPrinter.printText('Productores de hielo y agua\n', {
+        align: 'center',
+      });
+      await BluetoothEscposPrinter.printText('purificados del golfo\n', {
+        align: 'center',
+      });
+      await BluetoothEscposPrinter.printText('RFC: PHA030403QX9\n', {
+        align: 'center',
+      });
+      await BluetoothEscposPrinter.printText('TEL 01 279 8 34 21 10\n', {
+        align: 'center',
+      });
+      await BluetoothEscposPrinter.printText(sep + '\n', {});
+
+      // ═══════════════ TIPO DOCUMENTO ═══════════════
+      await BluetoothEscposPrinter.printText('FACTURA ELECTRONICA CFDI\n', {
+        align: 'center',
+        widthtimes: 1,
+      });
+      await BluetoothEscposPrinter.printText(sepLight + '\n', {});
+
+      // ═══════════════ DATOS DE LA FACTURA ═══════════════
+      await BluetoothEscposPrinter.printText(
+        leftRight('Serie-Folio:', `${params.serie}-${params.folio}`) + '\n',
+        {},
+      );
+
+      if (params.fecha) {
+        await BluetoothEscposPrinter.printText(
+          leftRight('Fecha:', params.fecha) + '\n',
+          {},
+        );
+      }
+
+      if (params.uuid) {
+        await BluetoothEscposPrinter.printText('UUID:\n', {});
+        // UUID puede ser largo, lo imprimimos en líneas de 32 chars
+        for (let i = 0; i < params.uuid.length; i += w) {
+          await BluetoothEscposPrinter.printText(
+            params.uuid.substring(i, i + w) + '\n',
+            {},
+          );
+        }
+      }
+
+      if (params.rfcEmisor) {
+        await BluetoothEscposPrinter.printText(
+          leftRight('RFC Emisor:', params.rfcEmisor) + '\n',
+          {},
+        );
+      }
+
+      if (params.rfcReceptor) {
+        await BluetoothEscposPrinter.printText(
+          leftRight('RFC Receptor:', params.rfcReceptor) + '\n',
+          {},
+        );
+      }
+
+      await BluetoothEscposPrinter.printText(sepLight + '\n', {});
+
+      // ═══════════════ CONCEPTOS ═══════════════
+      if (params.conceptos && params.conceptos.length > 0) {
+        await BluetoothEscposPrinter.printText('CONCEPTOS\n', {
+          widthtimes: 1,
+        });
+        await BluetoothEscposPrinter.printText(
+          'CANT DESC      PRECIO  IMPORTE\n',
+          {},
+        );
+        await BluetoothEscposPrinter.printText(sepLight + '\n', {});
+
+        for (const c of params.conceptos) {
+          const cant = String(c.cantidad).padEnd(4).substring(0, 4);
+          const desc = (c.descripcion || '').substring(0, 9).padEnd(9);
+          const precio = `$${c.precio.toFixed(0)}`.padStart(7);
+          const importe = `$${c.importe.toFixed(2)}`.padStart(9);
+          await BluetoothEscposPrinter.printText(
+            `${cant} ${desc}${precio}${importe}\n`,
+            {},
+          );
+        }
+        await BluetoothEscposPrinter.printText(sepLight + '\n', {});
+      }
+
+      // ═══════════════ TOTAL ═══════════════
+      if (params.total !== undefined) {
+        await BluetoothEscposPrinter.printText(
+          leftRight('TOTAL:', `$${params.total.toFixed(2)}`) + '\n',
+          { widthtimes: 1 },
+        );
+        await BluetoothEscposPrinter.printText(sep + '\n', {});
+      }
+
+      // ═══════════════ CÓDIGO QR ═══════════════
+      if (params.qrUrl) {
+        await BluetoothEscposPrinter.printText('\n', {});
+        await BluetoothEscposPrinter.printText(
+          center('VERIFICACION SAT') + '\n',
+          {},
+        );
+        await BluetoothEscposPrinter.printText(
+          center('Escanee el codigo QR') + '\n',
+          {},
+        );
+        await BluetoothEscposPrinter.printText('\n', {});
+
+        // Imprimir QR centrado
+        await this.printQR(params.qrUrl, 6);
+
+        await BluetoothEscposPrinter.printText('\n', {});
+      }
+
+      // ═══════════════ SELLO DIGITAL (resumido) ═══════════════
+      if (params.selloDigital) {
+        await BluetoothEscposPrinter.printText(sepLight + '\n', {});
+        await BluetoothEscposPrinter.printText('Sello Digital SAT:\n', {});
+        // Solo los primeros 64 caracteres
+        const selloCorto = params.selloDigital.substring(0, 64) + '...';
+        await BluetoothEscposPrinter.printText(selloCorto + '\n', {});
+      }
+
+      // ═══════════════ PIE ═══════════════
+      await BluetoothEscposPrinter.printText(sep + '\n', {});
+      await BluetoothEscposPrinter.printText(
+        center('Este documento es una') + '\n',
+        {},
+      );
+      await BluetoothEscposPrinter.printText(
+        center('representacion impresa de un CFDI') + '\n',
+        {},
+      );
+      await BluetoothEscposPrinter.printText(sep + '\n', {});
+      await BluetoothEscposPrinter.printText('\n\n\n', {});
+
+      return true;
+    } catch (error) {
+      console.error('Error printing CFDI ticket:', error);
+      Alert.alert('Error de Impresión', 'No se pudo imprimir el ticket CFDI');
+      return false;
+    }
+  }
+
+  /**
    * Prueba de impresión
    */
   async printTest(): Promise<boolean> {

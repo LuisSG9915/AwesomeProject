@@ -54,7 +54,7 @@ export default function BillingScreen() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
-  const [currentSucursal, setCurrentSucursal] = useState<number>(1);
+  const [currentSucursal, setCurrentSucursal] = useState<number>(0);
 
   const [searchTerm, setSearchTerm] = useState('');
   const filteredClients = useMemo(() => {
@@ -71,7 +71,7 @@ export default function BillingScreen() {
         const sucursal =
           (user.sucursal_origen as number | null | undefined) ??
           (user.sucursal as number | null | undefined) ??
-          1;
+          0;
         setCurrentSucursal(sucursal);
       }
     };
@@ -184,9 +184,12 @@ export default function BillingScreen() {
         Alert.alert('Seleccione al menos una factura');
         return;
       }
-      const sucursal = currentSucursal || 1;
+      const sucursal = currentSucursal || 0;
       const baseId = buildMovilCarteraId(sucursal);
       const now = new Date();
+
+      // Determinar tipo de pago: 1=efectivo, 2=transferencia
+      const tipoPago = efectivo ? 1 : transferencia ? 2 : 0;
 
       // Crear movimientos locales en cartera (saldo negativo indica pago)
       const movimientos = selected.map((inv, index) => {
@@ -202,6 +205,7 @@ export default function BillingScreen() {
           fecha: now,
           idSegmento: origen?.idSegmento ?? inv.idSegmento ?? null,
           noVenta: origen?.noVenta ?? null,
+          tipoPago,
         };
       });
 
@@ -210,6 +214,88 @@ export default function BillingScreen() {
 
         // Marcar renglones originales de cartera como cobrados (bit local)
         await FullSyncService.markCarteraAsPaid(selected.map(inv => inv.id));
+
+        // Sincronizar cobranza con el servidor
+        console.log('[Billing] Syncing cobranza to server', {
+          rows: movimientos.length,
+        });
+
+        try {
+          // Obtener todos los registros de cartera con id > 170000000
+          const todaCartera = FullSyncService.getCartera(999999) || [];
+          const carteraFiltrada = todaCartera.filter(
+            (row: any) => row.id > 170000000,
+          );
+
+          // Función para convertir fecha a hora de México (UTC-6)
+          const toMexicoTime = (
+            date: Date | string | null | undefined,
+          ): string => {
+            const d = date ? new Date(date) : new Date();
+            // Ajustar a UTC-6 (hora de México)
+            const mexicoOffset = -6 * 60; // -6 horas en minutos
+            const localOffset = d.getTimezoneOffset(); // offset actual en minutos
+            const diffMinutes = localOffset - mexicoOffset;
+            const mexicoDate = new Date(d.getTime() - diffMinutes * 60 * 1000);
+            return mexicoDate.toISOString();
+          };
+
+          const payload = carteraFiltrada.map((m: any) => ({
+            idCliente: m.idCliente,
+            nombreCliente: m.nombreCliente,
+            sucursal: m.sucursal,
+            sucursalSegmento: m.sucursalSegmento,
+            saldo: m.saldo,
+            fecha: toMexicoTime(m.fecha),
+            idSegmento: m.idSegmento,
+            noVenta: m.noVenta,
+            cobrado: m.cobrado ?? 1,
+            id_movil: m.id,
+            tipoPago: m.tipoPago ?? 0,
+            idUsuario: currentUser ? currentUser.id : 0,
+          }));
+          console.log(
+            `[Billing] Sending ${payload.length} records from cartera (id > 170000000)`,
+          );
+          console.log(payload);
+          const url = `https://cbinfo.no-ip.info:9011/api/MovilesVentas/sp_MovilesCobranzaArrastreJSON?sucursal=${encodeURIComponent(
+            String(sucursal),
+          )}&idUsuario=${encodeURIComponent(String(currentUser?.id ?? 0))}`;
+
+          console.log('[Billing] Sending cobranza arrastre payload', {
+            url,
+            rows: payload.length,
+          });
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            console.error(
+              '[Billing] Error sending cobranza arrastre',
+              response.status,
+              errorText,
+            );
+          } else {
+            console.log(
+              '[Billing] Cobranza arrastre sent successfully',
+              response.status,
+            );
+          }
+        } catch (syncError) {
+          console.error(
+            '[Billing] Error syncing cobranza to server:',
+            syncError,
+          );
+          // No bloqueamos el flujo si falla la sincronización
+        }
 
         const payMethod = efectivo
           ? 'Efectivo'
@@ -293,34 +379,36 @@ export default function BillingScreen() {
           <Text style={styles.muted}>No hay facturas</Text>
         ) : (
           <View style={styles.invoiceList}>
-            {invoices.map((inv, idx) => (
-              <TouchableOpacity
-                key={inv.id}
-                style={[styles.invRow, inv.pagar && styles.invRowSelected]}
-                onPress={() => handleTogglePayment(idx)}
-                activeOpacity={0.7}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.invTitle}>{inv.nota}</Text>
-                  <Text style={styles.muted}>{inv.fecha}</Text>
-                </View>
-                <View style={styles.amountContainer}>
-                  <Text style={styles.money}>${inv.importe.toFixed(2)}</Text>
-                  <View
-                    style={[styles.checkBox, inv.pagar && styles.checkBoxOn]}
-                  >
-                    {inv.pagar && (
-                      <Icon
-                        name="check"
-                        type="material"
-                        size={14}
-                        color="#fff"
-                      />
-                    )}
+            {invoices
+              .filter(inv => inv.saldo > 0)
+              .map((inv, idx) => (
+                <TouchableOpacity
+                  key={inv.id}
+                  style={[styles.invRow, inv.pagar && styles.invRowSelected]}
+                  onPress={() => handleTogglePayment(idx)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.invTitle}>{inv.nota}</Text>
+                    <Text style={styles.muted}>{inv.fecha}</Text>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  <View style={styles.amountContainer}>
+                    <Text style={styles.money}>${inv.importe.toFixed(2)}</Text>
+                    <View
+                      style={[styles.checkBox, inv.pagar && styles.checkBoxOn]}
+                    >
+                      {inv.pagar && (
+                        <Icon
+                          name="check"
+                          type="material"
+                          size={14}
+                          color="#fff"
+                        />
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
             <View style={styles.totalsBox}>
               <View style={styles.rowBetween}>
                 <Text style={styles.totalLabel}>Total pagado</Text>

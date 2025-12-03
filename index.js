@@ -42,7 +42,7 @@ const HeadlessTask = async (event) => {
       return;
     }
 
-    const sucursal = user.sucursal_origen || user.sucursal || 1;
+    const sucursal = user.sucursal_origen || user.sucursal || 0;
     console.log('[HeadlessTask] Sincronizando sucursal:', sucursal);
     
     // Ejecutar sincronización usando la arquitectura escalable

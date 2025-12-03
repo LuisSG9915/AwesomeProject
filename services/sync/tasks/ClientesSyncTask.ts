@@ -25,7 +25,7 @@ export class ClientesSyncTask extends SyncTask {
   async execute(): Promise<SyncTaskResult> {
     try {
       console.log('[ClientesSyncTask] Obteniendo clientes desde API...');
-      
+
       const response = await fetch(this.getEndpoint());
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -41,10 +41,21 @@ export class ClientesSyncTask extends SyncTask {
       // Sincronizar con Realm
       this.realm.write(() => {
         for (const cliente of clientes) {
-          const existing = this.realm.objectForPrimaryKey('ClienteFull', cliente.id);
-          
+          const existing = this.realm.objectForPrimaryKey(
+            'ClienteFull',
+            cliente.id,
+          );
+
           const clienteData = {
-            ...cliente,
+            id: cliente.id,
+            nombre: cliente.nombre,
+            longitud: cliente.longitud,
+            latitud: cliente.latitud,
+            idGrupo: cliente.idGrupo,
+            credito: cliente.credito,
+            facturacionMovil: cliente.facturacionMovil,
+            fechaAct: cliente.fecha_act ? new Date(cliente.fecha_act) : null,
+            correoFactura: cliente.correo_factura || null,
             syncedAt: new Date(),
           };
 
@@ -58,7 +69,9 @@ export class ClientesSyncTask extends SyncTask {
         }
       });
 
-      console.log(`[ClientesSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`);
+      console.log(
+        `[ClientesSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`,
+      );
 
       return {
         success: true,

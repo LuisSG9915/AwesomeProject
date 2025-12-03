@@ -284,7 +284,19 @@ export default function TraspasoRecepcionScreen() {
         throw new Error(msg);
       }
 
-      // await FullSyncService.syncInventario(sucursal);
+      // Actualizar inventario sumando las cantidades recibidas
+      console.log('[Traspaso] Updating inventory after reception', {
+        rows: detalles.length,
+      });
+      await FullSyncService.updateInventarioAfterReception(
+        detalles.map(item => ({
+          sucursal,
+          claveProd: item.idProducto || 0,
+          cantidad: item.cantidad,
+        })),
+      );
+      console.log('[Traspaso] Inventory updated successfully');
+
       await loadTraspasos();
       setModalOpen(false);
 

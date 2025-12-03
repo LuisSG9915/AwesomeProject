@@ -269,7 +269,7 @@ export default function DataViewScreen() {
   );
 
   const renderCartera = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
+    <TouchableOpacity onPress={() => console.log('Cartera', item)}>
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>{item.nombreCliente}</Text>

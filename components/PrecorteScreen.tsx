@@ -34,11 +34,16 @@ type PrecorteItem = {
 export default function PrecorteScreen() {
   const today = useMemo(() => {
     const now = new Date();
-    // Usar métodos locales que ya consideran la zona horaria del sistema
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    console.log('Fecha actual en horario local:', yyyy, mm, dd);
+    // Convertir a hora de México (UTC-6)
+    const mexicoOffset = -6 * 60; // -6 horas en minutos
+    const localOffset = now.getTimezoneOffset(); // offset actual en minutos
+    const diffMinutes = localOffset - mexicoOffset;
+    const mexicoDate = new Date(now.getTime() - diffMinutes * 60 * 1000);
+
+    const yyyy = mexicoDate.getFullYear();
+    const mm = String(mexicoDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(mexicoDate.getDate()).padStart(2, '0');
+    console.log('Fecha actual en horario México:', yyyy, mm, dd);
     return `${yyyy}-${mm}-${dd}`;
   }, []);
 
@@ -62,7 +67,7 @@ export default function PrecorteScreen() {
 
       await FullSyncService.initialize();
       const inventario = FullSyncService.getInventario(500) || [];
-      consoleRealm('Inventario', inventario);
+      console.log('Inventario', inventario);
       // Filtrar por fechaArrastre dentro del día seleccionado
       const inventarioFiltrado = inventario.filter((inv: any) => {
         const fa = inv.fechaArrastre;
@@ -70,7 +75,7 @@ export default function PrecorteScreen() {
         const d = fa instanceof Date ? fa : new Date(fa);
         return d >= startOfDay && d <= endOfDay;
       });
-      // consoleRealm('inventarioFiltrado', inventarioFiltrado);
+      // console.log('inventarioFiltrado', inventarioFiltrado);
       const mapped: PrecorteItem[] = inventarioFiltrado.map(
         (inv: any, index: number) => ({
           id: inv.id ?? index,

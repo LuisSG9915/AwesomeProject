@@ -283,24 +283,19 @@ export default function SalesScreen() {
         '';
       const now = new Date();
 
-      console.log('[Sales] Built sale metadata', {
-        sucursal,
-        saleIdMovil,
-        inventarioBaseId,
-        tipoPagoCode,
-        descripcionMedioPago,
-        vendedor,
-        now,
-      });
+      // Función para convertir fecha a hora de México (UTC-6)
+      const toMexicoTime = (date: Date | string | null | undefined): Date => {
+        const d = date ? new Date(date) : new Date();
+        // Ajustar a UTC-6 (hora de México)
+        const mexicoOffset = -6 * 60; // -6 horas en minutos
+        const localOffset = d.getTimezoneOffset(); // offset actual en minutos
+        const diffMinutes = localOffset - mexicoOffset;
+        const mexicoDate = new Date(d.getTime() - diffMinutes * 60 * 1000);
+        return mexicoDate;
+      };
 
-      // Ticket con formato detallado
-      console.log('[Sales] About to print sale ticket', {
-        clientName: client.nombre,
-        metodoPago,
-        itemsCount: cart.length,
-        total,
-        saleIdMovil,
-      });
+      const nowMexico = toMexicoTime(now);
+
       await TicketPrinter.printSaleTicket({
         clientName: client.nombre,
         paymentMethod: metodoPago,
@@ -312,18 +307,12 @@ export default function SalesScreen() {
         })),
         total: total,
         businessName: APP_NAME,
-        date: now,
+        date: nowMexico,
         ticketNumber: String(saleIdMovil),
         sellerName: vendedor,
         branch: sucursal,
       });
-      console.log('[Sales] Ticket printed OK', { saleIdMovil });
 
-      // Registrar venta en Realm (una fila por producto)
-      console.log('[Sales] Creating local ventas in Realm', {
-        rows: cart.length,
-        saleIdMovil,
-      });
       const localVentasPayload = cart.map((item, index) => ({
         id: saleIdMovil + index,
         idMovil: saleIdMovil,
@@ -336,7 +325,7 @@ export default function SalesScreen() {
         importe: item.precio * item.cantidad,
         cveCliente: client.id,
         nombreCliente: client.nombre,
-        fecha: now,
+        fecha: nowMexico,
         tipoPago: tipoPagoCode,
         descripcionMedioPago,
         vendedor,

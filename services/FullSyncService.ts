@@ -32,7 +32,9 @@ class FullSyncService {
       });
 
       this.isInitialized = true;
-      console.log('✅ FullSyncService inicializado correctamente (v5 con SyncTableLog)');
+      console.log(
+        '✅ FullSyncService inicializado correctamente (v5 con SyncTableLog)',
+      );
     } catch (error) {
       console.error('❌ Error al inicializar FullSyncService:', error);
       throw error;
@@ -56,7 +58,9 @@ class FullSyncService {
     }
 
     // Crear SyncLog principal
-    const syncLogId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const syncLogId = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
     const fechaInicio = new Date();
 
     try {
@@ -70,7 +74,9 @@ class FullSyncService {
         });
       });
 
-      console.log(`[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`);
+      console.log(
+        `[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`,
+      );
 
       // Crear orquestador y ejecutar todas las tareas
       const orchestrator = new SyncOrchestrator(
@@ -84,8 +90,11 @@ class FullSyncService {
 
       // Actualizar log final
       const fechaFinal = new Date();
-      const totalRegistros = Array.from(result.results.values())
-        .reduce((sum, r) => sum + (r.registrosGuardados || 0) + (r.registrosActualizados || 0), 0);
+      const totalRegistros = Array.from(result.results.values()).reduce(
+        (sum, r) =>
+          sum + (r.registrosGuardados || 0) + (r.registrosActualizados || 0),
+        0,
+      );
 
       this.realm.write(() => {
         const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
@@ -100,7 +109,9 @@ class FullSyncService {
         }
       });
 
-      console.log(`[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`);
+      console.log(
+        `[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`,
+      );
 
       return {
         success: result.success,
@@ -157,7 +168,9 @@ class FullSyncService {
     }
 
     // Crear SyncLog principal
-    const syncLogId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const syncLogId = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
     const fechaInicio = new Date();
 
     try {
@@ -171,7 +184,9 @@ class FullSyncService {
         });
       });
 
-      console.log(`[FullSyncService] Iniciando sincronización de tabla: ${tableName} (ID: ${syncLogId})`);
+      console.log(
+        `[FullSyncService] Iniciando sincronización de tabla: ${tableName} (ID: ${syncLogId})`,
+      );
 
       // Crear orquestador y ejecutar tarea específica
       const orchestrator = new SyncOrchestrator(
@@ -189,7 +204,8 @@ class FullSyncService {
 
       // Actualizar log final
       const fechaFinal = new Date();
-      const totalRegistros = (result.registrosGuardados || 0) + (result.registrosActualizados || 0);
+      const totalRegistros =
+        (result.registrosGuardados || 0) + (result.registrosActualizados || 0);
 
       this.realm.write(() => {
         const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
@@ -204,7 +220,9 @@ class FullSyncService {
         }
       });
 
-      console.log(`[FullSyncService] Sincronización de ${tableName} completada. Éxito: ${result.success}`);
+      console.log(
+        `[FullSyncService] Sincronización de ${tableName} completada. Éxito: ${result.success}`,
+      );
 
       return {
         success: result.success,
@@ -227,7 +245,10 @@ class FullSyncService {
         console.error('[FullSyncService] Error al actualizar log:', logError);
       }
 
-      console.error(`[FullSyncService] Error en sincronización de ${tableName}:`, error);
+      console.error(
+        `[FullSyncService] Error en sincronización de ${tableName}:`,
+        error,
+      );
       return {
         success: false,
         error: error?.message || 'Error desconocido',
@@ -420,6 +441,53 @@ class FullSyncService {
   }
 
   /**
+   * Actualiza el inventario sumando las cantidades recibidas en un traspaso.
+   * Busca el registro existente por sucursal y claveProd y actualiza el saldo.
+   */
+  async updateInventarioAfterReception(
+    items: {
+      sucursal: number;
+      claveProd: number;
+      cantidad: number;
+    }[],
+  ): Promise<void> {
+    if (!items.length) return;
+
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return;
+
+    this.realm.write(() => {
+      items.forEach(item => {
+        // Buscar el registro de inventario existente
+        const inventario = this.realm!.objects('Inventario').filtered(
+          'sucursal == $0 AND claveProd == $1',
+          item.sucursal,
+          item.claveProd,
+        )[0] as any;
+
+        if (inventario) {
+          // Actualizar el saldo sumando la cantidad recibida
+          inventario.saldo = (inventario.saldo || 0) + item.cantidad;
+          inventario.fechaArrastre = new Date();
+          console.log(
+            `[FullSync] Inventario actualizado (recepción): Producto ${
+              item.claveProd
+            }, Saldo anterior: ${
+              (inventario.saldo || 0) - item.cantidad
+            }, Nuevo saldo: ${inventario.saldo}`,
+          );
+        } else {
+          console.warn(
+            `[FullSync] No se encontró inventario para Producto ${item.claveProd} en Sucursal ${item.sucursal}`,
+          );
+        }
+      });
+    });
+  }
+
+  /**
    * Crea movimientos locales en Inventario (por ejemplo, recepción de traspasos).
    * @deprecated Usar updateInventarioAfterSale para ventas
    */
@@ -480,6 +548,7 @@ class FullSyncService {
       fecha?: Date | null;
       idSegmento?: number | null;
       noVenta?: number | null;
+      tipoPago?: number | null;
     }[],
   ): Promise<void> {
     if (!movimientos.length) return;
@@ -501,6 +570,7 @@ class FullSyncService {
           fecha: m.fecha ?? new Date(),
           idSegmento: m.idSegmento ?? null,
           noVenta: m.noVenta ?? null,
+          tipoPago: m.tipoPago ?? null,
           // Fecha centinela para indicar que aún no se sincroniza
           syncedAt: new Date(0),
         });
@@ -613,20 +683,19 @@ class FullSyncService {
     start.setHours(0, 0, 0, 0);
     const end = new Date(date);
     end.setHours(23, 59, 59, 999);
-  
-    let query = 'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and id < 17000000000';
+
+    let query =
+      'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and id < 17000000000';
     const args: any[] = [start, end];
-    
+
     if (sucursal !== undefined) {
       query += ' AND sucursal == $2';
       args.push(sucursal);
     }
-    console.log(sucursal)
-    const ventas = this.realm
-      .objects('Venta')
-      .filtered(query, ...args);
-console.log(ventas)
-consoleRealm('Venta:', ventas);
+    console.log(sucursal);
+    const ventas = this.realm.objects('Venta').filtered(query, ...args);
+    console.log(ventas);
+    console.log('Venta:', ventas);
     let total = 0;
     for (let i = 0; i < ventas.length; i++) {
       const v: any = ventas[i];

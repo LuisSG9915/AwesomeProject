@@ -2,11 +2,11 @@
  * BackgroundSyncService
  *
  * Servicio UNIFICADO para sincronización automática.
- * 
+ *
  * Arquitectura:
  * - Primer plano: setInterval cada 3 minutos (preciso)
  * - Segundo plano: BackgroundFetch + HeadlessTask en index.js
- * 
+ *
  * IMPORTANTE: La sincronización real se delega a FullSyncService.syncAll()
  * que maneja la arquitectura escalable con:
  * - SyncOrchestrator para dependencias
@@ -40,7 +40,7 @@ class BackgroundSyncService {
   private static instance: BackgroundSyncService;
 
   // Configuración
-  private readonly SYNC_INTERVAL_MS = 1 * 60 * 1000; // 3 minutos
+  private readonly SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
   private readonly SYNC_INTERVAL_MINUTES = 3; // Para BackgroundFetch
   private readonly BACKGROUND_FETCH_TASK_ID = 'com.awesomeproject.sync';
 
@@ -103,7 +103,7 @@ class BackgroundSyncService {
 
   /**
    * Configura react-native-background-fetch para sincronización en segundo plano
-   * 
+   *
    * NOTA: El HeadlessTask está registrado en index.js (nivel superior)
    * Este método solo configura el intervalo y callbacks de la app activa
    */
@@ -123,24 +123,24 @@ class BackgroundSyncService {
           forceAlarmManager: true, // Usar AlarmManager para mayor precisión en Android
           requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY, // Requiere conexión de red
         },
-        async (taskId) => {
+        async taskId => {
           // Este callback se ejecuta cuando la app está activa
           console.log('[BackgroundFetch] Tarea recibida (app activa):', taskId);
-          
+
           try {
             await this.performSync();
           } catch (error) {
             console.error('[BackgroundFetch] Error en sincronización:', error);
           }
-          
+
           // IMPORTANTE: Siempre llamar finish() cuando termine
           BackgroundFetch.finish(taskId);
         },
-        async (taskId) => {
+        async taskId => {
           // Callback de timeout - la tarea tomó demasiado tiempo
           console.warn('[BackgroundFetch] Timeout de tarea:', taskId);
           BackgroundFetch.finish(taskId);
-        }
+        },
       );
 
       // Verificar estado de BackgroundFetch
@@ -245,10 +245,10 @@ class BackgroundSyncService {
 
   /**
    * Ejecuta el proceso de sincronización
-   * 
+   *
    * NOTA: Delega toda la lógica a FullSyncService.syncAll() que maneja:
    * - SyncLog principal
-   * - SyncTableLog por tabla  
+   * - SyncTableLog por tabla
    * - Retry logic con exponential backoff
    * - Dependencias entre tablas
    */
@@ -283,11 +283,14 @@ class BackgroundSyncService {
       // - SyncTableLog por cada tabla
       // - Retry logic con exponential backoff
       // - Manejo de dependencias
-      const result = await FullSyncService.syncAll(sucursal, (progress: SyncProgress) => {
-        this.updateState({
-          currentProgress: progress,
-        });
-      });
+      const result = await FullSyncService.syncAll(
+        sucursal,
+        (progress: SyncProgress) => {
+          this.updateState({
+            currentProgress: progress,
+          });
+        },
+      );
 
       // Actualizar estado según resultado
       const now = new Date();
@@ -311,11 +314,17 @@ class BackgroundSyncService {
           currentProgress: null,
           errorMessage: result.error || 'Error desconocido',
         });
-        console.log('[BackgroundSync] Sincronización completada con errores:', result.error);
+        console.log(
+          '[BackgroundSync] Sincronización completada con errores:',
+          result.error,
+        );
       }
     } catch (error: any) {
       const errorMsg = error?.message || 'Error desconocido';
-      console.error('[BackgroundSync] Error crítico en sincronización:', errorMsg);
+      console.error(
+        '[BackgroundSync] Error crítico en sincronización:',
+        errorMsg,
+      );
 
       const nextSync = new Date(Date.now() + this.SYNC_INTERVAL_MS);
 

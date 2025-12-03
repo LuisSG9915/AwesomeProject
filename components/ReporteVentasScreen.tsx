@@ -54,6 +54,8 @@ type GroupedSale = {
   tipoPago: 'Efectivo' | 'Credito' | 'Transferencia';
   sucursal?: number;
   cve_cliente?: number;
+  folioFactura?: string;
+  facturacionMovil?: boolean;
   productos: Array<{
     nombreProducto: string;
     cantProducto: number;
@@ -65,7 +67,15 @@ type GroupedSale = {
 type TicketLine = string;
 
 export default function ReporteVentasScreen() {
-  const today = useMemo(() => new Date(), []);
+  const today = useMemo(() => {
+    const now = new Date();
+    // Convertir a hora de México (UTC-6)
+    const mexicoOffset = -6 * 60; // -6 horas en minutos
+    const localOffset = now.getTimezoneOffset(); // offset actual en minutos
+    const diffMinutes = localOffset - mexicoOffset;
+    const mexicoDate = new Date(now.getTime() - diffMinutes * 60 * 1000);
+    return mexicoDate;
+  }, []);
   const LOCAL_SALE_ID_THRESHOLD = 1700000000000;
 
   const formatDate = (date: Date): string => {
@@ -241,7 +251,7 @@ export default function ReporteVentasScreen() {
           );
         }
       });
-
+      consoleRealm('Filtered ventas', filtered);
       console.log('[Reporte] Filtered results', { count: filtered.length });
 
       const mapped: ReporteItem[] = filtered.map(venta => ({
@@ -267,43 +277,73 @@ export default function ReporteVentasScreen() {
 
       setItems(mapped);
 
-      // Si es vista local, agrupar por idMovil
-      if (soloLocales) {
-        const groupedMap = new Map<number, GroupedSale>();
+      // Agrupar ventas por idMovil (locales) o por noVenta+sucursal (remotas)
+      const groupedMap = new Map<string, GroupedSale>();
 
-        filtered.forEach(venta => {
-          const idMovil = venta.idMovil || venta.id;
-          if (!groupedMap.has(idMovil)) {
-            groupedMap.set(idMovil, {
-              idMovil,
-              no_venta: venta.noVenta || idMovil,
-              fecha: venta.fecha
-                ? new Date(venta.fecha).toISOString()
-                : new Date().toISOString(),
-              nombre: venta.nombreCliente || 'Sin nombre',
-              totalImporte: 0,
-              tipoPago: mapTipoPago(venta.tipoPago),
-              sucursal: venta.sucursal,
-              cve_cliente: venta.cveCliente,
-              productos: [],
-            });
-          }
+      filtered.forEach(venta => {
+        // Para ventas locales usar idMovil, para remotas usar noVenta+sucursal
+        let groupKey: string;
+        let displayId: number;
 
-          const group = groupedMap.get(idMovil)!;
-          const productoImporte = venta.importe || 0;
-          group.totalImporte += productoImporte;
-          group.productos.push({
-            nombreProducto: venta.nombreProducto || 'Sin nombre',
-            cantProducto: venta.cantProducto || 0,
-            precio: venta.precio || 0,
-            importe: productoImporte,
-          });
+        if (soloLocales) {
+          // Ventas locales: agrupar por idMovil
+          displayId = venta.idMovil || venta.id;
+          groupKey = `local_${displayId}`;
+        } else {
+          // Ventas remotas: agrupar por noVenta + sucursal
+          const noVenta = venta.noVenta || venta.id;
+          const sucursal = venta.sucursal || 0;
+          displayId = noVenta;
+          groupKey = `remote_${noVenta}_${sucursal}`;
+        }
+
+        console.log('[Reporte] Grouping venta', {
+          id: venta.id,
+          noVenta: venta.noVenta,
+          sucursal: venta.sucursal,
+          groupKey,
         });
 
-        setGroupedItems(Array.from(groupedMap.values()));
-      } else {
-        setGroupedItems([]);
-      }
+        if (!groupedMap.has(groupKey)) {
+          groupedMap.set(groupKey, {
+            idMovil: displayId,
+            no_venta: venta.noVenta || displayId,
+            fecha: venta.fecha
+              ? new Date(venta.fecha).toISOString()
+              : new Date().toISOString(),
+            nombre: venta.nombreCliente || 'Sin nombre',
+            totalImporte: 0,
+            tipoPago: mapTipoPago(venta.tipoPago),
+            sucursal: venta.sucursal,
+            cve_cliente: venta.cveCliente,
+            productos: [],
+            folioFactura: venta.folioFactura,
+            facturacionMovil: venta.facturacionMovil,
+          });
+        }
+
+        const group = groupedMap.get(groupKey)!;
+        const productoImporte = venta.importe || 0;
+        group.totalImporte += productoImporte;
+        group.productos.push({
+          nombreProducto: venta.nombreProducto || 'Sin nombre',
+          cantProducto: venta.cantProducto || 0,
+          precio: venta.precio || 0,
+          importe: productoImporte,
+        });
+      });
+
+      const groupedArray = Array.from(groupedMap.values());
+      console.log('[Reporte] Grouped results', {
+        totalGroups: groupedArray.length,
+        groups: groupedArray.map(g => ({
+          no_venta: g.no_venta,
+          productos: g.productos.length,
+          total: g.totalImporte,
+        })),
+      });
+
+      setGroupedItems(groupedArray);
     } catch (error: any) {
       console.error('Error al filtrar ventas:', error);
       const errorMsg = error?.message || String(error) || 'Error desconocido';
@@ -469,11 +509,21 @@ export default function ReporteVentasScreen() {
     await TicketPrinter.print(lines, 'Ticket de Venta');
   };
 
-  const facturarVenta = async (row: ReporteItem) => {
+  const facturarVenta = async (row: ReporteItem | GroupedSale) => {
     try {
+      // Normalizar datos para soportar ReporteItem y GroupedSale
+      const noVenta = row.no_venta;
+      const sucursal = row.sucursal;
+      const cveCliente = row.cve_cliente;
+      const fecha = row.fecha;
+      const folioFactura = row.folioFactura;
+      const timbrado =
+        'timbrado' in row ? (row as ReporteItem).timbrado : undefined;
+      const facturacionMovil = row.facturacionMovil;
+
       // Si ya tiene folio/timbrado, reimprimir CFDI
-      if (row.folioFactura || row.timbrado === '1') {
-        if (!row.no_venta || !row.sucursal) {
+      if (folioFactura || timbrado === '1') {
+        if (!noVenta || !sucursal) {
           Alert.alert(
             'Factura',
             'No hay información suficiente para reimprimir',
@@ -482,49 +532,59 @@ export default function ReporteVentasScreen() {
         }
 
         await FacturaService.getInstance().imprimirFacturaExistente(
-          row.no_venta,
-          row.sucursal,
-          row.caja || 2,
+          noVenta,
+          sucursal,
+          2,
           () => loadVentas(),
         );
         return;
       }
 
       // Si está marcada para facturación móvil, generar factura
-      if (row.facturacionMovil && row.cve_cliente && row.sucursal) {
-        // Confirmación simple (modo de prueba no aplicado aquí de momento)
-        const fechaVenta = new Date(row.fecha);
+      if (facturacionMovil && cveCliente && sucursal) {
+        const fechaVenta = new Date(fecha);
         const yyyy = fechaVenta.getFullYear();
         const mm = String(fechaVenta.getMonth() + 1).padStart(2, '0');
         const dd = String(fechaVenta.getDate()).padStart(2, '0');
         const fechaFactura = `${yyyy}-${mm}-${dd}`;
 
         const facturaItem: FacturaItem = {
-          id: row.no_venta,
-          idCliente: row.cve_cliente,
+          id: noVenta,
+          idCliente: cveCliente,
           idGrupo: 0,
-          sucursal: row.sucursal,
-          caja: row.caja || 1,
-          noVenta: row.no_venta,
+          sucursal: sucursal,
+          caja: 2,
+          noVenta: noVenta,
           formaPago: '03', // Transferencia electrónica
           metodoPago: 'PUE', // Pago en una sola exhibición
           usoCFDI: 'G03', // Gastos en general
         };
 
-        await FacturaService.getInstance().generarFactura(
+        const result = await FacturaService.getInstance().generarFactura(
           [facturaItem],
           fechaFactura,
           () => loadVentas(),
         );
+
+        // Si hubo error, ya se mostró en el servicio
+        if (!result.success) {
+          console.log(
+            '[ReporteVentas] Error al generar factura:',
+            result.error,
+          );
+        }
         return;
       }
 
-      Alert.alert('Factura', 'Esta venta no permite factura');
-    } catch (error: any) {
       Alert.alert(
-        'Error',
-        error?.message || 'Ocurrió un error al manejar la factura',
+        'Factura',
+        'Esta venta no permite factura.\n\nVerifique que el cliente tenga habilitada la facturación móvil.',
       );
+    } catch (error: any) {
+      const errorMsg =
+        error?.message || 'Ocurrió un error al manejar la factura';
+      console.error('[ReporteVentas] Error en facturarVenta:', error);
+      Alert.alert('Error al Facturar', errorMsg);
     }
   };
 
@@ -704,11 +764,11 @@ export default function ReporteVentasScreen() {
           Resultados {isLocalView ? '(Ventas Locales)' : '(Ventas Remotas)'}
         </Text>
 
-        {/* Vista agrupada para ventas locales */}
-        {isLocalView && groupedItems.length === 0 && (
+        {/* Vista agrupada para todas las ventas */}
+        {groupedItems.length === 0 && (
           <Text style={styles.muted}>Sin resultados</Text>
         )}
-        {isLocalView && groupedItems.length > 0 && (
+        {groupedItems.length > 0 && (
           <FlatList
             data={groupedItems}
             keyExtractor={i => String(i.idMovil)}
@@ -752,6 +812,24 @@ export default function ReporteVentasScreen() {
                           size={20}
                         />
                       </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => facturarVenta(group)}
+                        disabled={
+                          !group.folioFactura && !group.facturacionMovil
+                        }
+                        style={styles.iconBtn}
+                      >
+                        <Icon
+                          name="receipt"
+                          type="material"
+                          color={
+                            !group.folioFactura && !group.facturacionMovil
+                              ? COLORS.muted
+                              : COLORS.success
+                          }
+                          size={20}
+                        />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </View>
@@ -773,75 +851,7 @@ export default function ReporteVentasScreen() {
           />
         )}
 
-        {/* Vista normal para ventas remotas */}
-        {!isLocalView && items.length === 0 && (
-          <Text style={styles.muted}>Sin resultados</Text>
-        )}
-        {!isLocalView && items.length > 0 && (
-          <FlatList
-            data={items}
-            keyExtractor={i => String(i.id)}
-            scrollEnabled={false}
-            renderItem={({ item }) => (
-              <View style={styles.rowItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.invTitle}>
-                    #{item.no_venta} • {item.nombre}
-                  </Text>
-                  <Text style={styles.muted}>
-                    {new Date(item.fecha).toLocaleString('es-MX')} •{' '}
-                    {item.tipoPago}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.money}>${item.importe.toFixed(2)}</Text>
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      onPress={() => imprimirTicket(item)}
-                      style={styles.iconBtn}
-                    >
-                      <Icon
-                        name="print"
-                        type="material"
-                        color={COLORS.primary}
-                        size={20}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => visualizarTicket(item)}
-                      style={styles.iconBtn}
-                    >
-                      <Icon
-                        name="visibility"
-                        type="material"
-                        color={COLORS.info}
-                        size={20}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => facturarVenta(item)}
-                      disabled
-                      style={styles.iconBtn}
-                    >
-                      <Icon
-                        name="receipt"
-                        type="material"
-                        color={
-                          !item.folioFactura && !item.facturacionMovil
-                            ? COLORS.muted
-                            : COLORS.success
-                        }
-                        size={20}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            )}
-          />
-        )}
-
-        {items.length > 0 && (
+        {groupedItems.length > 0 && (
           <View style={styles.totalsBox}>
             <View style={styles.rowBetween}>
               <Text style={styles.totalLabel}>Total</Text>

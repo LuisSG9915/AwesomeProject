@@ -51,14 +51,17 @@ export default function LoginScreen({ navigation }: any) {
     console.log('Login attempt with user:', usuario);
     setLoading(true);
     try {
-      await AuthService.login(usuario.trim(), password.trim());
+      const user = await AuthService.login(usuario.trim(), password.trim());
 
       // Iniciar sincronización después del login exitoso
       setLoading(false);
       setSyncing(true);
       setSyncProgress([]);
 
-      await FullSyncService.syncAll(1, (progress: SyncProgress) => {
+      const sucursal = user.sucursal || user.sucursal_origen || 0;
+      console.log('Sincronizando sucursal:', sucursal);
+      console.log('Sincronizando sucursal:', user);
+      await FullSyncService.syncAll(sucursal, (progress: SyncProgress) => {
         setSyncProgress(prev => [...prev, progress]);
       });
 
