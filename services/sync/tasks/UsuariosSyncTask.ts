@@ -33,6 +33,7 @@ export class UsuariosSyncTask extends SyncTask {
 
       const usuarios = await response.json();
       const registrosLeidos = usuarios.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -46,6 +47,7 @@ export class UsuariosSyncTask extends SyncTask {
           const usuarioData = {
             ...usuario,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

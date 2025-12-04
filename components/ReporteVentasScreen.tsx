@@ -553,7 +553,7 @@ export default function ReporteVentasScreen() {
           idCliente: cveCliente,
           idGrupo: 0,
           sucursal: sucursal,
-          caja: 2,
+          caja: 1,
           noVenta: noVenta,
           formaPago: '03', // Transferencia electrónica
           metodoPago: 'PUE', // Pago en una sola exhibición

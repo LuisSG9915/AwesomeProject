@@ -33,6 +33,7 @@ export class PreciosSyncTask extends SyncTask {
 
       const precios = await response.json();
       const registrosLeidos = precios.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -46,6 +47,7 @@ export class PreciosSyncTask extends SyncTask {
           const precioData = {
             ...precio,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

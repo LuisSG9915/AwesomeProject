@@ -21,6 +21,7 @@ export const VentaSchema = {
     folioFactura: 'bool?',
     facturacionMovil: 'bool?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };
@@ -38,6 +39,7 @@ export const UsuarioSchema = {
     password: 'string?',
     sucursalOrigen: 'int?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };
@@ -51,6 +53,7 @@ export const ProductoSchema = {
     esKit: 'bool?',
     fechaAct: 'date?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };
@@ -65,6 +68,7 @@ export const PrecioSchema = {
     precio: 'float?',
     fechaAct: 'date?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };
@@ -79,6 +83,7 @@ export const InventarioSchema = {
     saldo: 'float?',
     descripcion: 'string?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };
@@ -98,6 +103,7 @@ export const CarteraSchema = {
     cobrado: 'bool?',
     tipoPago: 'int?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };
@@ -115,6 +121,7 @@ export const ClienteFullSchema = {
     fechaAct: 'date?',
     correoFactura: 'string?',
     syncedAt: 'date',
+    syncedAr: 'date?',
   },
   primaryKey: 'id',
 };

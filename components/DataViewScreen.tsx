@@ -182,6 +182,11 @@ export default function DataViewScreen() {
             Importe: ${item.importe?.toFixed(2)}
           </Text>
           <Text style={styles.cardText}>Vendedor: {item.vendedor}</Text>
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -207,6 +212,11 @@ export default function DataViewScreen() {
               Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
             </Text>
           ) : null}
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -227,6 +237,11 @@ export default function DataViewScreen() {
           <Text style={styles.cardText}>
             Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
           </Text>
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -245,6 +260,11 @@ export default function DataViewScreen() {
           <Text style={styles.cardText}>
             Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
           </Text>
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -263,6 +283,11 @@ export default function DataViewScreen() {
           <Text style={styles.cardText}>
             Fecha Arrastre: {item.fechaArrastre?.toLocaleString() || 'N/A'}
           </Text>
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -282,6 +307,11 @@ export default function DataViewScreen() {
           <Text style={styles.cardText}>
             Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
           </Text>
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -300,6 +330,11 @@ export default function DataViewScreen() {
           <Text style={styles.cardText}>
             Sucursal Origen: {item.sucursalOrigen}
           </Text>
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>

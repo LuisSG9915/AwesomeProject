@@ -19,7 +19,7 @@ class FullSyncService {
       this.realm = await Realm.open({
         path: 'FullSyncDB',
         schema: ALL_SCHEMAS,
-        schemaVersion: 5, // Actualizado para incluir SyncTableLogSchema
+        schemaVersion: 6, // v6: SyncTableLogSchema + syncedAr en tablas de datos
         onMigration: (oldRealm: Realm, newRealm: Realm) => {
           const newCartera = newRealm.objects('Cartera');
           for (let i = 0; i < newCartera.length; i++) {
@@ -39,6 +39,374 @@ class FullSyncService {
       console.error('❌ Error al inicializar FullSyncService:', error);
       throw error;
     }
+  }
+
+  /**
+   * Obtiene la última fecha syncedAr (horario México) de una tabla dada.
+   * Si no hay registros o todas son null, regresa null.
+   */
+  private getLastSyncedAr(tableName: string): Date | null {
+    if (!this.realm) return null;
+
+    const collection: any = this.realm.objects(tableName);
+    if (!collection || collection.length === 0) return null;
+
+    const maxDate = collection.max('syncedAr') as Date | null;
+    return maxDate || null;
+  }
+
+  /**
+   * Normaliza un Date a un string "YYYY-MM-DD HH:mm" para fechaInicial.
+   */
+  private formatDateTimeForApi(date: Date): string {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+  }
+
+  /**
+   * Normaliza un Date a un string "YYYY-MM-DD" para fechaInicial sin hora.
+   */
+  private formatDateForApi(date: Date): string {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  /**
+   * Convierte la hora actual a horario de México (UTC-6), siguiendo el patrón
+   * usado en otras partes de la app.
+   */
+  private getMexicoNow(): Date {
+    const now = new Date();
+    const mexicoOffset = -6 * 60; // -6 horas en minutos
+    const localOffset = now.getTimezoneOffset();
+    const diffMinutes = localOffset - mexicoOffset;
+    return new Date(now.getTime() - diffMinutes * 60 * 1000);
+  }
+
+  /**
+   * Sincronización INCREMENTAL para background (cada 3 minutos).
+   *
+   * Usa los nuevos endpoints basados en fechaInicial, tomando como referencia
+   * la fecha máxima de syncedAr (horario México) en cada tabla.
+   *
+   * Tablas cubiertas:
+   * - Clientes  -> /api/MovilesVentas/clientes?fechaInicial=YYYY-MM-DD HH:mm
+   * - Precios   -> /api/MovilesVentas/precios?fechaInicial=YYYY-MM-DD HH:mm
+   * - Cartera   -> /api/MovilesVentas/cartera?fechaInicial=YYYY-MM-DD
+   * - Ventas    -> /api/MovilesVentas/ventas-erp-movil?fechaInicial=YYYY-MM-DD HH:mm&sucursal=...
+   */
+  async syncIncremental(
+    sucursal: number = 1,
+    onProgress?: SyncProgressCallback,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    if (!this.realm) {
+      throw new Error('Realm no inicializado');
+    }
+
+    // Crear SyncLog principal específico para incremental
+    const syncLogId = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+    const fechaInicio = new Date();
+
+    this.realm.write(() => {
+      this.realm!.create('SyncLog', {
+        id: syncLogId,
+        fechaInicio,
+        exitoso: true,
+        tipo: 'incremental',
+      } as any);
+    });
+
+    console.log(
+      `[FullSyncService] Iniciando sincronización incremental (ID: ${syncLogId})`,
+    );
+
+    const errors: string[] = [];
+    const nowMexico = this.getMexicoNow();
+
+    const notify = (entity: string, current: number, total: number, status: SyncProgress['status'], message: string) => {
+      if (onProgress) {
+        onProgress({ current, total, entity, status, message });
+      }
+    };
+
+    // Orden fijo de tablas incrementales
+    const tasks: { name: string; run: () => Promise<void> }[] = [
+      {
+        name: 'ClientesIncremental',
+        run: async () => {
+          const tableName = 'ClienteFull';
+          const last = this.getLastSyncedAr(tableName) || new Date(0);
+          const fechaInicial = this.formatDateTimeForApi(last);
+          const url = `${this.apiBaseUrl}/api/MovilesVentas/clientes?fechaInicial=${encodeURIComponent(
+            fechaInicial,
+          )}`;
+
+          console.log('[Incremental] Clientes desde', fechaInicial, url);
+
+          const response = await fetch(url, {
+            headers: { accept: 'application/octet-stream' },
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} Clientes`);
+          }
+
+          const clientes = await response.json();
+          const registrosLeidos = Array.isArray(clientes) ? clientes.length : 0;
+          let registrosGuardados = 0;
+          let registrosActualizados = 0;
+
+          this.realm!.write(() => {
+            for (const cliente of clientes) {
+              const existing = this.realm!.objectForPrimaryKey(
+                'ClienteFull',
+                cliente.id,
+              ) as any;
+
+              const clienteData: any = {
+                id: cliente.id,
+                nombre: cliente.nombre,
+                longitud: cliente.longitud,
+                latitud: cliente.latitud,
+                idGrupo: cliente.idGrupo,
+                credito: cliente.credito,
+                facturacionMovil: cliente.facturacionMovil,
+                fechaAct: cliente.fecha_act
+                  ? new Date(cliente.fecha_act)
+                  : null,
+                correoFactura: cliente.correo_factura || null,
+                syncedAt: new Date(),
+                syncedAr: nowMexico,
+              };
+
+              if (existing) {
+                this.realm!.create('ClienteFull', clienteData, UpdateMode.Modified);
+                registrosActualizados++;
+              } else {
+                this.realm!.create('ClienteFull', clienteData);
+                registrosGuardados++;
+              }
+            }
+          });
+
+          console.log(
+            `[Incremental] Clientes leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+          );
+        },
+      },
+      {
+        name: 'PreciosIncremental',
+        run: async () => {
+          const tableName = 'Precio';
+          const last = this.getLastSyncedAr(tableName) || new Date(0);
+          const fechaInicial = this.formatDateTimeForApi(last);
+          const url = `${this.apiBaseUrl}/api/MovilesVentas/precios?fechaInicial=${encodeURIComponent(
+            fechaInicial,
+          )}`;
+
+          console.log('[Incremental] Precios desde', fechaInicial, url);
+
+          const response = await fetch(url, {
+            headers: { accept: 'application/octet-stream' },
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} Precios`);
+          }
+
+          const precios = await response.json();
+          const registrosLeidos = Array.isArray(precios) ? precios.length : 0;
+          let registrosGuardados = 0;
+          let registrosActualizados = 0;
+
+          this.realm!.write(() => {
+            for (const precio of precios) {
+              const existing = this.realm!.objectForPrimaryKey(
+                'Precio',
+                precio.id,
+              ) as any;
+
+              const precioData: any = {
+                ...precio,
+                syncedAt: new Date(),
+                syncedAr: nowMexico,
+              };
+
+              if (existing) {
+                this.realm!.create('Precio', precioData, UpdateMode.Modified);
+                registrosActualizados++;
+              } else {
+                this.realm!.create('Precio', precioData);
+                registrosGuardados++;
+              }
+            }
+          });
+
+          console.log(
+            `[Incremental] Precios leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+          );
+        },
+      },
+      {
+        name: 'CarteraIncremental',
+        run: async () => {
+          const tableName = 'Cartera';
+          const last = this.getLastSyncedAr(tableName) || new Date(0);
+          const fechaInicial = this.formatDateForApi(last);
+          const url = `${this.apiBaseUrl}/api/MovilesVentas/cartera?fechaInicial=${encodeURIComponent(
+            fechaInicial,
+          )}`;
+
+          console.log('[Incremental] Cartera desde', fechaInicial, url);
+
+          const response = await fetch(url, {
+            headers: { accept: 'application/octet-stream' },
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} Cartera`);
+          }
+
+          const cartera = await response.json();
+          const registrosLeidos = Array.isArray(cartera) ? cartera.length : 0;
+          let registrosGuardados = 0;
+          let registrosActualizados = 0;
+
+          this.realm!.write(() => {
+            for (const item of cartera) {
+              const existing = this.realm!.objectForPrimaryKey(
+                'Cartera',
+                item.id,
+              ) as any;
+
+              const carteraData: any = {
+                ...item,
+                syncedAt: new Date(),
+                syncedAr: nowMexico,
+              };
+
+              if (existing) {
+                this.realm!.create('Cartera', carteraData, UpdateMode.Modified);
+                registrosActualizados++;
+              } else {
+                this.realm!.create('Cartera', carteraData);
+                registrosGuardados++;
+              }
+            }
+          });
+
+          console.log(
+            `[Incremental] Cartera leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+          );
+        },
+      },
+      {
+        name: 'VentasIncremental',
+        run: async () => {
+          const tableName = 'Venta';
+          const last = this.getLastSyncedAr(tableName) || new Date(0);
+          const fechaInicial = this.formatDateTimeForApi(last);
+          const url = `${this.apiBaseUrl}/api/MovilesVentas/ventas-erp-movil?fechaInicial=${encodeURIComponent(
+            fechaInicial,
+          )}&sucursal=${encodeURIComponent(String(sucursal))}`;
+
+          console.log('[Incremental] Ventas desde', fechaInicial, url);
+
+          const response = await fetch(url, {
+            headers: { accept: 'application/octet-stream' },
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status} Ventas`);
+          }
+
+          const ventas = await response.json();
+          const registrosLeidos = Array.isArray(ventas) ? ventas.length : 0;
+          let registrosGuardados = 0;
+          let registrosActualizados = 0;
+
+          this.realm!.write(() => {
+            for (const venta of ventas) {
+              const existing = this.realm!.objectForPrimaryKey(
+                'Venta',
+                venta.id,
+              ) as any;
+
+              const ventaData: any = {
+                ...venta,
+                sucursal,
+                syncedAt: new Date(),
+                syncedAr: nowMexico,
+              };
+
+              if (existing) {
+                this.realm!.create('Venta', ventaData, UpdateMode.Modified);
+                registrosActualizados++;
+              } else {
+                this.realm!.create('Venta', ventaData);
+                registrosGuardados++;
+              }
+            }
+          });
+
+          console.log(
+            `[Incremental] Ventas leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+          );
+        },
+      },
+    ];
+
+    const totalTasks = tasks.length;
+    let currentTask = 0;
+
+    for (const task of tasks) {
+      currentTask++;
+      notify(task.name, currentTask, totalTasks, 'syncing', `Sincronizando ${task.name}...`);
+
+      try {
+        await task.run();
+        notify(task.name, currentTask, totalTasks, 'success', `${task.name} sincronizado`);
+      } catch (error: any) {
+        const msg = error?.message || 'Error desconocido';
+        console.error(`[FullSyncService] Error incremental en ${task.name}:`, msg);
+        errors.push(`${task.name}: ${msg}`);
+        notify(task.name, currentTask, totalTasks, 'error', `Error en ${task.name}: ${msg}`);
+      }
+    }
+
+    const fechaFinal = new Date();
+
+    // Actualizar SyncLog
+    this.realm.write(() => {
+      const log: any = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+      if (log) {
+        log.fechaFinal = fechaFinal;
+        log.exitoso = errors.length === 0;
+        log.totalRegistros = undefined;
+        log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+        if (errors.length > 0) {
+          log.razon = errors.join('; ');
+        }
+      }
+    });
+
+    const success = errors.length === 0;
+    console.log(
+      `[FullSyncService] Sincronización incremental completada. Éxito: ${success}, Errores: ${errors.length}`,
+    );
+
+    return {
+      success,
+      error: success ? undefined : errors.join('; '),
+    };
   }
 
   /**

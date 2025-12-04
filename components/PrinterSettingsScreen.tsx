@@ -280,6 +280,7 @@ export default function PrinterSettingsScreen() {
               Dispositivos Encontrados ({printers.length})
             </Text>
             <FlatList
+              style={styles.printersFlatList}
               data={printers}
               keyExtractor={item => item.address}
               renderItem={({ item }) => (
@@ -512,6 +513,9 @@ const styles = StyleSheet.create({
   },
   printersList: {
     marginTop: SPACING.m,
+  },
+  printersFlatList: {
+    maxHeight: 260,
   },
   listTitle: {
     fontSize: 14,

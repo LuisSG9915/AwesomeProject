@@ -33,6 +33,7 @@ export class ProductosSyncTask extends SyncTask {
 
       const productos = await response.json();
       const registrosLeidos = productos.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -46,6 +47,7 @@ export class ProductosSyncTask extends SyncTask {
           const productoData = {
             ...producto,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

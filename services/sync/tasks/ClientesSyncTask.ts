@@ -33,6 +33,7 @@ export class ClientesSyncTask extends SyncTask {
 
       const clientes = await response.json();
       const registrosLeidos = clientes.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -57,6 +58,7 @@ export class ClientesSyncTask extends SyncTask {
             fechaAct: cliente.fecha_act ? new Date(cliente.fecha_act) : null,
             correoFactura: cliente.correo_factura || null,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

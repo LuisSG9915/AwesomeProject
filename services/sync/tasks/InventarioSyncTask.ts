@@ -40,6 +40,7 @@ export class InventarioSyncTask extends SyncTask {
 
       const inventario = await response.json();
       const registrosLeidos = inventario.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -54,6 +55,7 @@ export class InventarioSyncTask extends SyncTask {
             ...item,
             sucursal: this.sucursal,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

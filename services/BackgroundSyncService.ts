@@ -277,13 +277,10 @@ class BackgroundSyncService {
       const sucursal = user.sucursal_origen || user.sucursal || 1;
       console.log('[BackgroundSync] Sincronizando sucursal:', sucursal);
 
-      // Ejecutar sincronización usando arquitectura escalable
-      // FullSyncService.syncAll() ya maneja:
-      // - SyncLog principal
-      // - SyncTableLog por cada tabla
-      // - Retry logic con exponential backoff
-      // - Manejo de dependencias
-      const result = await FullSyncService.syncAll(
+      // Ejecutar sincronización INCREMENTAL usando arquitectura escalable
+      // FullSyncService.syncIncremental() usa fechaInicial basada en syncedAr
+      // por tabla y los nuevos endpoints específicos para background.
+      const result = await FullSyncService.syncIncremental(
         sucursal,
         (progress: SyncProgress) => {
           this.updateState({

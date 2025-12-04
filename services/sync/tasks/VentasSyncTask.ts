@@ -40,6 +40,7 @@ export class VentasSyncTask extends SyncTask {
       console.log(response)
       const ventas = await response.json();
       const registrosLeidos = ventas.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -54,6 +55,7 @@ export class VentasSyncTask extends SyncTask {
             ...venta,
             sucursal: this.sucursal,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

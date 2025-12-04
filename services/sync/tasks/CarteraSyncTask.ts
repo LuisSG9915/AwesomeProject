@@ -33,6 +33,7 @@ export class CarteraSyncTask extends SyncTask {
 
       const cartera = await response.json();
       const registrosLeidos = cartera.length;
+      const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
@@ -46,6 +47,7 @@ export class CarteraSyncTask extends SyncTask {
           const carteraData = {
             ...item,
             syncedAt: new Date(),
+            syncedAr: nowMexico,
           };
 
           if (existing) {

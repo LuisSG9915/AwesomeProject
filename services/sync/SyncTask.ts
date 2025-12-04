@@ -38,6 +38,18 @@ export abstract class SyncTask {
   }
 
   /**
+   * Obtiene la fecha/hora actual en horario de México (UTC-6)
+   * siguiendo el mismo patrón usado en otras partes de la app.
+   */
+  protected getMexicoNow(): Date {
+    const now = new Date();
+    const mexicoOffset = -6 * 60; // -6 horas en minutos
+    const localOffset = now.getTimezoneOffset();
+    const diffMinutes = localOffset - mexicoOffset;
+    return new Date(now.getTime() - diffMinutes * 60 * 1000);
+  }
+
+  /**
    * Nombre de la tabla que sincroniza esta tarea
    */
   abstract getTableName(): string;

@@ -397,7 +397,7 @@ class BluetoothPrinterService {
   /**
    * Imprime un código QR
    */
-  async printQR(data: string, size: number = 6): Promise<boolean> {
+  async printQR(data: string, size?: number): Promise<boolean> {
     if (!this.isConnected) {
       console.warn('No hay impresora conectada para imprimir QR');
       return false;
@@ -408,8 +408,16 @@ class BluetoothPrinterService {
       await BluetoothEscposPrinter.printText('\n', { align: 'center' });
 
       // Imprimir QR usando el método de la librería
-      // size: 1-16 (tamaño del QR), errorLevel: 1=L, 2=M, 3=Q, 4=H
-      await BluetoothEscposPrinter.printQRCode(data, size, 3);
+      // Usamos prácticamente todo el ancho del papel para que el QR sea grande y legible.
+      // Si el caller pasa un size muy pequeño (como 6), lo ignoramos y usamos el ancho por defecto.
+      const width58 = (BluetoothEscposPrinter as any).width58 || 384;
+      const width80 = (BluetoothEscposPrinter as any).width80 || 576;
+      const deviceWidth = width58 || width80 || 384;
+
+      const finalSize =
+        typeof size === 'number' && size >= 100 ? size : deviceWidth;
+
+      await BluetoothEscposPrinter.printQRCode(data, finalSize, 3);
 
       await BluetoothEscposPrinter.printText('\n', {});
       return true;
@@ -503,14 +511,9 @@ class BluetoothPrinterService {
       }
 
       if (params.uuid) {
+        // Imprimir UUID completo, sin recortarlo manualmente
         await BluetoothEscposPrinter.printText('UUID:\n', {});
-        // UUID puede ser largo, lo imprimimos en líneas de 32 chars
-        for (let i = 0; i < params.uuid.length; i += w) {
-          await BluetoothEscposPrinter.printText(
-            params.uuid.substring(i, i + w) + '\n',
-            {},
-          );
-        }
+        await BluetoothEscposPrinter.printText(params.uuid + '\n', {});
       }
 
       if (params.rfcEmisor) {
@@ -575,8 +578,8 @@ class BluetoothPrinterService {
         );
         await BluetoothEscposPrinter.printText('\n', {});
 
-        // Imprimir QR centrado
-        await this.printQR(params.qrUrl, 6);
+        // Imprimir QR centrado usando el tamaño por defecto (ancho del papel)
+        await this.printQR(params.qrUrl);
 
         await BluetoothEscposPrinter.printText('\n', {});
       }

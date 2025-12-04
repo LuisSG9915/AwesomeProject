@@ -73,6 +73,13 @@ class FacturaService {
       item.idGrupo = (cliente && (cliente as any).idGrupo) || 0;
       const correoCliente = (cliente as any)?.correoFactura || null;
 
+      console.log('[FacturaService] Datos de cliente para factura:', {
+        idCliente: item.idCliente,
+        existeCliente: !!cliente,
+        idGrupo: item.idGrupo,
+        tieneCorreoFactura: !!correoCliente,
+      });
+
       // Determinar endpoint según idGrupo
       const endpoint =
         item.idGrupo === 0
@@ -80,6 +87,22 @@ class FacturaService {
           : '/api/FRESKY/get-data-cfd-xml-grupos-addenda-fecha-nuevo';
 
       const caja = item.caja !== undefined ? item.caja : 2;
+
+      if (caja === 1 || caja === 2) {
+        const confirmed = await this.confirmarCaja(caja);
+        if (!confirmed) {
+          const errorMessage =
+            caja === 1
+              ? 'Facturación productiva cancelada por el usuario'
+              : 'Facturación de prueba cancelada por el usuario';
+          return {
+            success: false,
+            error: errorMessage,
+            correoCliente,
+          };
+        }
+      }
+
       const xmlContent = this.generateXMLContent(selectedItems);
 
       // Construir URL con parámetros
@@ -95,10 +118,16 @@ class FacturaService {
 
       console.log('[FacturaService] Generando factura...', {
         endpoint,
+        apiUrl: `${this.apiBaseUrl}${cleanUrl}`,
         caja,
+        sucursal: item.sucursal,
+        noVenta: item.noVenta,
         idCliente: item.idCliente,
+        idGrupo: item.idGrupo,
+        fechaFactura,
       });
 
+  
       // Llamar API de generación de factura
       const response = await fetch(`${this.apiBaseUrl}${cleanUrl}`, {
         method: 'POST',
@@ -139,7 +168,9 @@ class FacturaService {
           errorMessage = responseText.substring(0, 300);
         }
 
-        console.error('[FacturaService] Error en respuesta:', errorMessage);
+      
+
+    
         Alert.alert('Error al Generar Factura', errorMessage);
         return { success: false, error: errorMessage };
       }
@@ -309,6 +340,32 @@ class FacturaService {
     }
   }
 
+  private confirmarCaja(caja: number): Promise<boolean> {
+    const mensaje =
+      caja === 1
+        ? 'La factura se generará en CAJA 1 (PRODUCTIVO).\n\n¿Desea continuar?'
+        : 'La factura se generará en CAJA 2 (PRUEBAS).\n\n¿Desea continuar?';
+
+    return new Promise(resolve => {
+      Alert.alert(
+        'Confirmar facturación',
+        mensaje,
+        [
+          {
+            text: 'Cancelar',
+            style: 'cancel',
+            onPress: () => resolve(false),
+          },
+          {
+            text: 'Continuar',
+            onPress: () => resolve(true),
+          },
+        ],
+        { cancelable: false },
+      );
+    });
+  }
+
   private base64Encode(str: string): string {
     // Codificar string a base64 compatible con React Native
     const chars =
@@ -395,7 +452,7 @@ class FacturaService {
     }
 
     const data = await response.json();
-
+    console.log('[FacturaService] Data:', data);
     if (data && data.serie) {
       const serie = String(data.serie);
       const folio = data.caja?.toString?.() || data.folio?.toString?.() || '0';
@@ -424,7 +481,6 @@ class FacturaService {
     try {
       data = await response.json();
     } catch (e) {
-      // Si el servidor no devuelve JSON, no podremos formatear el ticket
       throw new Error('Formato de respuesta inválido para ticket CFDI');
     }
 
@@ -444,18 +500,18 @@ class FacturaService {
     }> = [];
 
     if (Array.isArray(data)) {
-      data.forEach((item: any) => {
-        // Extraer datos comunes del ticket
+      data.forEach((item: any, index: number) => {
+        // 1) Intentar leer campos estructurados si existen
         if (item.uuid) uuid = String(item.uuid);
         if (item.fecha) fecha = String(item.fecha);
         if (item.rfcEmisor) rfcEmisor = String(item.rfcEmisor);
         if (item.rfcReceptor) rfcReceptor = String(item.rfcReceptor);
-        if (item.total) total = parseFloat(item.total) || 0;
+        if (item.total) total = parseFloat(item.total) || total;
         if (item.qr) qrUrl = String(item.qr);
         if (item.sello || item.selloDigital)
           selloDigital = String(item.sello || item.selloDigital);
 
-        // Extraer conceptos si vienen
+        // 2) Extraer conceptos si vienen estructurados
         if (item.descripcion && item.cantidad !== undefined) {
           conceptos.push({
             descripcion: String(item.descripcion),
@@ -464,14 +520,85 @@ class FacturaService {
             importe: parseFloat(item.importe) || 0,
           });
         }
+
+        // 3) Fallback: parsear texto como en el sistema viejo
+        const line =
+          typeof item === 'string'
+            ? item
+            : item.linea || item.descripcion || '';
+        if (!line) {
+          return;
+        }
+
+        const lower = line.toLowerCase();
+
+        // UUID / Folio fiscal
+        if (!uuid && (lower.includes('uuid:') || lower.includes('folio fiscal:'))) {
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            uuid = parts[1].trim();
+          }
+        }
+
+        // RFC Emisor
+        if (!rfcEmisor && lower.includes('rfc emisor')) {
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            rfcEmisor = parts[1].trim();
+          }
+        }
+
+        // RFC Receptor
+        if (!rfcReceptor && lower.includes('rfc receptor')) {
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            rfcReceptor = parts[1].trim();
+          }
+        }
+
+        // Total
+        if (!total && lower.includes('total')) {
+          const match = line.match(/[0-9]+[0-9.,]*/);
+          if (match) {
+            const num = parseFloat(match[0].replace(',', ''));
+            if (!isNaN(num)) {
+              total = num;
+            }
+          }
+        }
+
+        // Sello CFD / Sello digital
+        if (
+          !selloDigital &&
+          (lower.includes('sello cfd') || lower.includes('sello digital'))
+        ) {
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            selloDigital = parts[1].trim();
+          }
+        }
+
+        // QR directo en texto
+        if (!qrUrl && lower.includes('qr:')) {
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            qrUrl = parts[1].trim();
+          }
+        }
       });
     }
 
-    // Si no hay QR, construir URL de verificación SAT
-    if (!qrUrl && uuid) {
-      qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${rfcEmisor}&rr=${rfcReceptor}&tt=${total}&fe=`;
-    } else if (!qrUrl) {
-      qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${serie}-${folio}`;
+    // Si no hay QR, construir URL de verificación SAT similar al sistema viejo
+    if (!qrUrl) {
+      if (uuid && rfcEmisor && rfcReceptor && total > 0) {
+        const totalStr = total.toFixed(2);
+        const selloLast8 = selloDigital ? selloDigital.slice(-8) : '';
+        qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${rfcEmisor}&rr=${rfcReceptor}&tt=${totalStr}&fe=${selloLast8}`;
+      } else if (uuid) {
+        qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}`;
+      } else {
+        qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${serie}-${folio}`;
+      }
     }
 
     // Usar el nuevo método de impresión profesional con QR
