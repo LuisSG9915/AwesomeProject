@@ -38,15 +38,11 @@ export abstract class SyncTask {
   }
 
   /**
-   * Obtiene la fecha/hora actual en horario de México (UTC-6)
-   * siguiendo el mismo patrón usado en otras partes de la app.
+   * Obtiene la fecha/hora actual.
+   * El dispositivo ya está en hora de México, no se requiere conversión.
    */
   protected getMexicoNow(): Date {
-    const now = new Date();
-    const mexicoOffset = -6 * 60; // -6 horas en minutos
-    const localOffset = now.getTimezoneOffset();
-    const diffMinutes = localOffset - mexicoOffset;
-    return new Date(now.getTime() - diffMinutes * 60 * 1000);
+    return new Date();
   }
 
   /**
@@ -110,7 +106,10 @@ export abstract class SyncTask {
         registrosGuardados: result.registrosGuardados,
       });
     } catch (error) {
-      console.error(`[${this.getTableName()}] Error al guardar bitácora:`, error);
+      console.error(
+        `[${this.getTableName()}] Error al guardar bitácora:`,
+        error,
+      );
     }
   }
 
@@ -119,7 +118,9 @@ export abstract class SyncTask {
    */
   async executeWithLogging(): Promise<SyncTaskResult> {
     const fechaInicio = new Date();
-    console.log(`[${this.getTableName()}] Iniciando sincronización con retry logic...`);
+    console.log(
+      `[${this.getTableName()}] Iniciando sincronización con retry logic...`,
+    );
 
     const maxRetries = 3;
     const baseDelay = 1000; // 1 segundo
@@ -129,8 +130,12 @@ export abstract class SyncTask {
       try {
         if (attempt > 1) {
           const delay = baseDelay * Math.pow(2, attempt - 2); // Exponential backoff
-          console.log(`[${this.getTableName()}] Reintentando sincronización (intento ${attempt}/${maxRetries}) después de ${delay}ms...`);
-          await new Promise<void>(resolve => setTimeout(() => resolve(), delay));
+          console.log(
+            `[${this.getTableName()}] Reintentando sincronización (intento ${attempt}/${maxRetries}) después de ${delay}ms...`,
+          );
+          await new Promise<void>(resolve =>
+            setTimeout(() => resolve(), delay),
+          );
         }
 
         const result = await this.execute();
@@ -146,8 +151,12 @@ export abstract class SyncTask {
 
         return result;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Error desconocido');
-        console.error(`[${this.getTableName()}] Intento ${attempt}/${maxRetries} fallido:`, lastError.message);
+        lastError =
+          error instanceof Error ? error : new Error('Error desconocido');
+        console.error(
+          `[${this.getTableName()}] Intento ${attempt}/${maxRetries} fallido:`,
+          lastError.message,
+        );
 
         // Si es el último intento, guardar el error y retornar
         if (attempt === maxRetries) {
@@ -164,7 +173,10 @@ export abstract class SyncTask {
 
           await this.saveTableLog(errorResult, fechaInicio, fechaFinal);
 
-          console.error(`[${this.getTableName()}] Sincronización fallida después de ${maxRetries} intentos:`, lastError);
+          console.error(
+            `[${this.getTableName()}] Sincronización fallida después de ${maxRetries} intentos:`,
+            lastError,
+          );
           return errorResult;
         }
       }
@@ -192,9 +204,9 @@ export abstract class SyncTask {
       'ETIMEDOUT',
       'HTTP 5',
     ];
-    
-    return networkErrorMessages.some(msg => 
-      error.message.toLowerCase().includes(msg.toLowerCase())
+
+    return networkErrorMessages.some(msg =>
+      error.message.toLowerCase().includes(msg.toLowerCase()),
     );
   }
 }

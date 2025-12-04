@@ -11,7 +11,7 @@ export class CarteraSyncTask extends SyncTask {
   }
 
   getEndpoint(): string {
-    return 'https://cbinfo.no-ip.info:9011/api/MovilesVentas/cartera-full';
+    return 'https://cbinfo.no-ip.info:9011/api/MovilesVentas/cartera';
   }
 
   getPriority(): number {
@@ -25,7 +25,7 @@ export class CarteraSyncTask extends SyncTask {
   async execute(): Promise<SyncTaskResult> {
     try {
       console.log('[CarteraSyncTask] Obteniendo cartera desde API...');
-      
+
       const response = await fetch(this.getEndpoint());
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -37,17 +37,19 @@ export class CarteraSyncTask extends SyncTask {
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
-      console.log(`[CarteraSyncTask] Leídos ${registrosLeidos} registros de cartera`);
+      console.log(
+        `[CarteraSyncTask] Leídos ${registrosLeidos} registros de cartera`,
+      );
 
       // Sincronizar con Realm
       this.realm.write(() => {
         for (const item of cartera) {
           const existing = this.realm.objectForPrimaryKey('Cartera', item.id);
-          
+
           const carteraData = {
             ...item,
             syncedAt: new Date(),
-            syncedAr: nowMexico,
+            syncedAr: item.fechaLog ? new Date(item.fechaLog) : null,
           };
 
           if (existing) {
@@ -60,7 +62,9 @@ export class CarteraSyncTask extends SyncTask {
         }
       });
 
-      console.log(`[CarteraSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`);
+      console.log(
+        `[CarteraSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`,
+      );
 
       return {
         success: true,

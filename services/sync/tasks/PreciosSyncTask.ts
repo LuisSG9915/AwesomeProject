@@ -25,7 +25,7 @@ export class PreciosSyncTask extends SyncTask {
   async execute(): Promise<SyncTaskResult> {
     try {
       console.log('[PreciosSyncTask] Obteniendo precios desde API...');
-      
+
       const response = await fetch(this.getEndpoint());
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -43,11 +43,11 @@ export class PreciosSyncTask extends SyncTask {
       this.realm.write(() => {
         for (const precio of precios) {
           const existing = this.realm.objectForPrimaryKey('Precio', precio.id);
-          
+
           const precioData = {
             ...precio,
             syncedAt: new Date(),
-            syncedAr: nowMexico,
+            syncedAr: precio.fechaLog ? new Date(precio.fechaLog) : null,
           };
 
           if (existing) {
@@ -60,7 +60,9 @@ export class PreciosSyncTask extends SyncTask {
         }
       });
 
-      console.log(`[PreciosSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`);
+      console.log(
+        `[PreciosSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`,
+      );
 
       return {
         success: true,

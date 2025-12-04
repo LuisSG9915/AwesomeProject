@@ -275,9 +275,26 @@ class BackgroundSyncService {
       }
 
       const sucursal = user.sucursal_origen || user.sucursal || 1;
+      const idUsuario = user.id || user.idUsuario || 1;
       console.log('[BackgroundSync] Sincronizando sucursal:', sucursal);
 
-      // Ejecutar sincronización INCREMENTAL usando arquitectura escalable
+      // PRIMERO: Enviar ventas pendientes al servidor (arrastre)
+      const ventasResult = await FullSyncService.sendPendingVentasToServer(
+        sucursal,
+        idUsuario,
+      );
+      if (ventasResult.success && ventasResult.sent > 0) {
+        console.log(
+          `[BackgroundSync] Ventas pendientes enviadas: ${ventasResult.sent}`,
+        );
+      } else if (!ventasResult.success) {
+        console.error(
+          '[BackgroundSync] Error enviando ventas pendientes:',
+          ventasResult.error,
+        );
+      }
+
+      // DESPUÉS: Ejecutar sincronización INCREMENTAL usando arquitectura escalable
       // FullSyncService.syncIncremental() usa fechaInicial basada en syncedAr
       // por tabla y los nuevos endpoints específicos para background.
       const result = await FullSyncService.syncIncremental(

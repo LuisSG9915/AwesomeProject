@@ -58,7 +58,7 @@ export class ClientesSyncTask extends SyncTask {
             fechaAct: cliente.fecha_act ? new Date(cliente.fecha_act) : null,
             correoFactura: cliente.correo_factura || null,
             syncedAt: new Date(),
-            syncedAr: nowMexico,
+            syncedAr: cliente.fechaLog ? new Date(cliente.fechaLog) : null,
           };
 
           if (existing) {

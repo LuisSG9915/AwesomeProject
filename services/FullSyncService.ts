@@ -78,15 +78,11 @@ class FullSyncService {
   }
 
   /**
-   * Convierte la hora actual a horario de México (UTC-6), siguiendo el patrón
-   * usado en otras partes de la app.
+   * Obtiene la fecha/hora actual.
+   * El dispositivo ya está en hora de México, no se requiere conversión.
    */
   private getMexicoNow(): Date {
-    const now = new Date();
-    const mexicoOffset = -6 * 60; // -6 horas en minutos
-    const localOffset = now.getTimezoneOffset();
-    const diffMinutes = localOffset - mexicoOffset;
-    return new Date(now.getTime() - diffMinutes * 60 * 1000);
+    return new Date();
   }
 
   /**
@@ -128,257 +124,374 @@ class FullSyncService {
       } as any);
     });
 
-    console.log(
-      `[FullSyncService] Iniciando sincronización incremental (ID: ${syncLogId})`,
-    );
+    // console.log(
+    //   `[FullSyncService] Iniciando sincronización incremental (ID: ${syncLogId})`,
+    // );
 
     const errors: string[] = [];
     const nowMexico = this.getMexicoNow();
 
-    const notify = (entity: string, current: number, total: number, status: SyncProgress['status'], message: string) => {
+    const notify = (
+      entity: string,
+      current: number,
+      total: number,
+      status: SyncProgress['status'],
+      message: string,
+    ) => {
       if (onProgress) {
         onProgress({ current, total, entity, status, message });
       }
     };
 
+    // Tipo para resultado de tarea incremental
+    type IncrementalTaskResult = {
+      tabla: string;
+      endpoint: string;
+      registrosLeidos: number;
+      registrosGuardados: number;
+      registrosActualizados: number;
+    };
+
     // Orden fijo de tablas incrementales
-    const tasks: { name: string; run: () => Promise<void> }[] = [
-      {
-        name: 'ClientesIncremental',
-        run: async () => {
-          const tableName = 'ClienteFull';
-          const last = this.getLastSyncedAr(tableName) || new Date(0);
-          const fechaInicial = this.formatDateTimeForApi(last);
-          const url = `${this.apiBaseUrl}/api/MovilesVentas/clientes?fechaInicial=${encodeURIComponent(
-            fechaInicial,
-          )}`;
+    const tasks: { name: string; run: () => Promise<IncrementalTaskResult> }[] =
+      [
+        {
+          name: 'ClientesIncremental',
+          run: async () => {
+            const tableName = 'ClienteFull';
+            const last = this.getLastSyncedAr(tableName) || new Date(0);
+            const fechaInicial = this.formatDateTimeForApi(last);
+            const url = `${
+              this.apiBaseUrl
+            }/api/MovilesVentas/clientes?fechaInicial=${encodeURIComponent(
+              fechaInicial,
+            )}`;
 
-          console.log('[Incremental] Clientes desde', fechaInicial, url);
+            // console.log('[Incremental] Clientes desde', fechaInicial, url);
 
-          const response = await fetch(url, {
-            headers: { accept: 'application/octet-stream' },
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status} Clientes`);
-          }
-
-          const clientes = await response.json();
-          const registrosLeidos = Array.isArray(clientes) ? clientes.length : 0;
-          let registrosGuardados = 0;
-          let registrosActualizados = 0;
-
-          this.realm!.write(() => {
-            for (const cliente of clientes) {
-              const existing = this.realm!.objectForPrimaryKey(
-                'ClienteFull',
-                cliente.id,
-              ) as any;
-
-              const clienteData: any = {
-                id: cliente.id,
-                nombre: cliente.nombre,
-                longitud: cliente.longitud,
-                latitud: cliente.latitud,
-                idGrupo: cliente.idGrupo,
-                credito: cliente.credito,
-                facturacionMovil: cliente.facturacionMovil,
-                fechaAct: cliente.fecha_act
-                  ? new Date(cliente.fecha_act)
-                  : null,
-                correoFactura: cliente.correo_factura || null,
-                syncedAt: new Date(),
-                syncedAr: nowMexico,
-              };
-
-              if (existing) {
-                this.realm!.create('ClienteFull', clienteData, UpdateMode.Modified);
-                registrosActualizados++;
-              } else {
-                this.realm!.create('ClienteFull', clienteData);
-                registrosGuardados++;
-              }
+            const response = await fetch(url, {
+              headers: { accept: 'application/octet-stream' },
+            });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status} Clientes`);
             }
-          });
 
-          console.log(
-            `[Incremental] Clientes leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
-          );
-        },
-      },
-      {
-        name: 'PreciosIncremental',
-        run: async () => {
-          const tableName = 'Precio';
-          const last = this.getLastSyncedAr(tableName) || new Date(0);
-          const fechaInicial = this.formatDateTimeForApi(last);
-          const url = `${this.apiBaseUrl}/api/MovilesVentas/precios?fechaInicial=${encodeURIComponent(
-            fechaInicial,
-          )}`;
+            const clientes = await response.json();
+            const registrosLeidos = Array.isArray(clientes)
+              ? clientes.length
+              : 0;
+            let registrosGuardados = 0;
+            let registrosActualizados = 0;
 
-          console.log('[Incremental] Precios desde', fechaInicial, url);
+            this.realm!.write(() => {
+              for (const cliente of clientes) {
+                const existing = this.realm!.objectForPrimaryKey(
+                  'ClienteFull',
+                  cliente.id,
+                ) as any;
 
-          const response = await fetch(url, {
-            headers: { accept: 'application/octet-stream' },
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status} Precios`);
-          }
+                const clienteData: any = {
+                  id: cliente.id,
+                  nombre: cliente.nombre,
+                  longitud: cliente.longitud,
+                  latitud: cliente.latitud,
+                  idGrupo: cliente.idGrupo,
+                  credito: cliente.credito,
+                  facturacionMovil: cliente.facturacionMovil,
+                  fechaAct: cliente.fecha_act
+                    ? new Date(cliente.fecha_act)
+                    : null,
+                  correoFactura: cliente.correo_factura || null,
+                  syncedAt: new Date(),
+                  syncedAr: nowMexico,
+                };
 
-          const precios = await response.json();
-          const registrosLeidos = Array.isArray(precios) ? precios.length : 0;
-          let registrosGuardados = 0;
-          let registrosActualizados = 0;
-
-          this.realm!.write(() => {
-            for (const precio of precios) {
-              const existing = this.realm!.objectForPrimaryKey(
-                'Precio',
-                precio.id,
-              ) as any;
-
-              const precioData: any = {
-                ...precio,
-                syncedAt: new Date(),
-                syncedAr: nowMexico,
-              };
-
-              if (existing) {
-                this.realm!.create('Precio', precioData, UpdateMode.Modified);
-                registrosActualizados++;
-              } else {
-                this.realm!.create('Precio', precioData);
-                registrosGuardados++;
+                if (existing) {
+                  this.realm!.create(
+                    'ClienteFull',
+                    clienteData,
+                    UpdateMode.Modified,
+                  );
+                  registrosActualizados++;
+                } else {
+                  this.realm!.create('ClienteFull', clienteData);
+                  registrosGuardados++;
+                }
               }
-            }
-          });
+            });
 
-          console.log(
-            `[Incremental] Precios leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
-          );
+            // console.log(
+            //   `[Incremental] Clientes leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+            // );
+
+            return {
+              tabla: tableName,
+              endpoint: url,
+              registrosLeidos,
+              registrosGuardados,
+              registrosActualizados,
+            };
+          },
         },
-      },
-      {
-        name: 'CarteraIncremental',
-        run: async () => {
-          const tableName = 'Cartera';
-          const last = this.getLastSyncedAr(tableName) || new Date(0);
-          const fechaInicial = this.formatDateForApi(last);
-          const url = `${this.apiBaseUrl}/api/MovilesVentas/cartera?fechaInicial=${encodeURIComponent(
-            fechaInicial,
-          )}`;
+        {
+          name: 'PreciosIncremental',
+          run: async () => {
+            const tableName = 'Precio';
+            const last = this.getLastSyncedAr(tableName) || new Date(0);
+            const fechaInicial = this.formatDateTimeForApi(last);
+            const url = `${
+              this.apiBaseUrl
+            }/api/MovilesVentas/precios?fechaInicial=${encodeURIComponent(
+              fechaInicial,
+            )}`;
 
-          console.log('[Incremental] Cartera desde', fechaInicial, url);
+            console.log('[Incremental] Precios desde', fechaInicial, url);
 
-          const response = await fetch(url, {
-            headers: { accept: 'application/octet-stream' },
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status} Cartera`);
-          }
+            const response = await fetch(url, {
+              headers: { accept: 'application/octet-stream' },
+            });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status} Precios`);
+            }
 
-          const cartera = await response.json();
-          const registrosLeidos = Array.isArray(cartera) ? cartera.length : 0;
-          let registrosGuardados = 0;
-          let registrosActualizados = 0;
+            const precios = await response.json();
+            const registrosLeidos = Array.isArray(precios) ? precios.length : 0;
+            let registrosGuardados = 0;
+            let registrosActualizados = 0;
 
-          this.realm!.write(() => {
-            for (const item of cartera) {
-              const existing = this.realm!.objectForPrimaryKey(
-                'Cartera',
-                item.id,
-              ) as any;
+            this.realm!.write(() => {
+              for (const precio of precios) {
+                const existing = this.realm!.objectForPrimaryKey(
+                  'Precio',
+                  precio.id,
+                ) as any;
 
-              const carteraData: any = {
-                ...item,
-                syncedAt: new Date(),
-                syncedAr: nowMexico,
-              };
+                const precioData: any = {
+                  ...precio,
+                  syncedAt: new Date(),
+                  syncedAr: nowMexico,
+                };
 
-              if (existing) {
-                this.realm!.create('Cartera', carteraData, UpdateMode.Modified);
-                registrosActualizados++;
-              } else {
-                this.realm!.create('Cartera', carteraData);
-                registrosGuardados++;
+                if (existing) {
+                  this.realm!.create('Precio', precioData, UpdateMode.Modified);
+                  registrosActualizados++;
+                } else {
+                  this.realm!.create('Precio', precioData);
+                  registrosGuardados++;
+                }
               }
-            }
-          });
+            });
 
-          console.log(
-            `[Incremental] Cartera leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
-          );
+            console.log(
+              `[Incremental] Precios leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+            );
+
+            return {
+              tabla: tableName,
+              endpoint: url,
+              registrosLeidos,
+              registrosGuardados,
+              registrosActualizados,
+            };
+          },
         },
-      },
-      {
-        name: 'VentasIncremental',
-        run: async () => {
-          const tableName = 'Venta';
-          const last = this.getLastSyncedAr(tableName) || new Date(0);
-          const fechaInicial = this.formatDateTimeForApi(last);
-          const url = `${this.apiBaseUrl}/api/MovilesVentas/ventas-erp-movil?fechaInicial=${encodeURIComponent(
-            fechaInicial,
-          )}&sucursal=${encodeURIComponent(String(sucursal))}`;
+        {
+          name: 'CarteraIncremental',
+          run: async () => {
+            const tableName = 'Cartera';
+            const last = this.getLastSyncedAr(tableName) || new Date(0);
+            const fechaInicial = this.formatDateForApi(last);
+            const url = `${
+              this.apiBaseUrl
+            }/api/MovilesVentas/cartera?fechaInicial=${encodeURIComponent(
+              fechaInicial,
+            )}`;
 
-          console.log('[Incremental] Ventas desde', fechaInicial, url);
+            console.log('[Incremental] Cartera desde', fechaInicial, url);
 
-          const response = await fetch(url, {
-            headers: { accept: 'application/octet-stream' },
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status} Ventas`);
-          }
+            const response = await fetch(url, {
+              headers: { accept: 'application/octet-stream' },
+            });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status} Cartera`);
+            }
 
-          const ventas = await response.json();
-          const registrosLeidos = Array.isArray(ventas) ? ventas.length : 0;
-          let registrosGuardados = 0;
-          let registrosActualizados = 0;
+            const cartera = await response.json();
+            const registrosLeidos = Array.isArray(cartera) ? cartera.length : 0;
+            let registrosGuardados = 0;
+            let registrosActualizados = 0;
 
-          this.realm!.write(() => {
-            for (const venta of ventas) {
-              const existing = this.realm!.objectForPrimaryKey(
-                'Venta',
-                venta.id,
-              ) as any;
+            this.realm!.write(() => {
+              for (const item of cartera) {
+                const existing = this.realm!.objectForPrimaryKey(
+                  'Cartera',
+                  item.id,
+                ) as any;
 
-              const ventaData: any = {
-                ...venta,
-                sucursal,
-                syncedAt: new Date(),
-                syncedAr: nowMexico,
-              };
+                const carteraData: any = {
+                  ...item,
+                  syncedAt: new Date(),
+                  syncedAr: nowMexico,
+                };
 
-              if (existing) {
-                this.realm!.create('Venta', ventaData, UpdateMode.Modified);
-                registrosActualizados++;
-              } else {
-                this.realm!.create('Venta', ventaData);
-                registrosGuardados++;
+                if (existing) {
+                  this.realm!.create(
+                    'Cartera',
+                    carteraData,
+                    UpdateMode.Modified,
+                  );
+                  registrosActualizados++;
+                } else {
+                  this.realm!.create('Cartera', carteraData);
+                  registrosGuardados++;
+                }
               }
-            }
-          });
+            });
 
-          console.log(
-            `[Incremental] Ventas leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
-          );
+            // console.log(
+            //   `[Incremental] Cartera leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+            // );
+
+            return {
+              tabla: tableName,
+              endpoint: url,
+              registrosLeidos,
+              registrosGuardados,
+              registrosActualizados,
+            };
+          },
         },
-      },
-    ];
+        {
+          name: 'VentasIncremental',
+          run: async () => {
+            const tableName = 'Venta';
+            const last = this.getLastSyncedAr(tableName) || new Date(0);
+            const fechaInicial = this.formatDateTimeForApi(last);
+            const url = `${
+              this.apiBaseUrl
+            }/api/MovilesVentas/ventas-erp-movil?fechaInicial=${encodeURIComponent(
+              fechaInicial,
+            )}&sucursal=${encodeURIComponent(String(sucursal))}`;
+
+            console.log('[Incremental] Ventas desde', fechaInicial, url);
+
+            const response = await fetch(url, {
+              headers: { accept: 'application/octet-stream' },
+            });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status} Ventas`);
+            }
+
+            const ventas = await response.json();
+            console.log(ventas, 'Ventas sincronizadas');
+            const registrosLeidos = Array.isArray(ventas) ? ventas.length : 0;
+            let registrosGuardados = 0;
+            let registrosActualizados = 0;
+
+            // Solo actualizar registros locales con id > 1700000000
+            // Buscar por idMovil y actualizar solo: noVenta, folioFactura, facturacionMovil
+            this.realm!.write(() => {
+              for (const venta of ventas) {
+                // Buscar registro local por idMovil donde id > 1700000000
+                const localVentas = this.realm!.objects('Venta').filtered(
+                  'idMovil == $0 AND id > 1700000000',
+                  venta.idMovil,
+                );
+
+                if (localVentas.length > 0) {
+                  // Actualizar solo los campos específicos en cada registro encontrado
+                  for (const localVenta of localVentas) {
+                    (localVenta as any).noVenta = venta.noVenta;
+                    (localVenta as any).folioFactura = venta.folioFactura;
+                    (localVenta as any).facturacionMovil =
+                      venta.facturacionMovil;
+                    (localVenta as any).syncedAt = nowMexico;
+                    registrosActualizados++;
+                  }
+                }
+              }
+
+              // Actualizar syncedAr en TODOS los registros locales con id > 1700000000
+              const allLocalVentas =
+                this.realm!.objects('Venta').filtered('id > 1700000000');
+              for (const localVenta of allLocalVentas) {
+                (localVenta as any).syncedAr = nowMexico;
+              }
+            });
+
+            console.log(
+              `[Incremental] Ventas leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+            );
+
+            return {
+              tabla: tableName,
+              endpoint: url,
+              registrosLeidos,
+              registrosGuardados,
+              registrosActualizados,
+            };
+          },
+        },
+      ];
 
     const totalTasks = tasks.length;
     let currentTask = 0;
 
     for (const task of tasks) {
       currentTask++;
-      notify(task.name, currentTask, totalTasks, 'syncing', `Sincronizando ${task.name}...`);
+      const fechaInicioTask = new Date();
+      notify(
+        task.name,
+        currentTask,
+        totalTasks,
+        'syncing',
+        `Sincronizando ${task.name}...`,
+      );
 
       try {
-        await task.run();
-        notify(task.name, currentTask, totalTasks, 'success', `${task.name} sincronizado`);
+        const result = await task.run();
+        const fechaFinalTask = new Date();
+
+        // Guardar bitácora por tabla
+        this.realm!.write(() => {
+          this.realm!.create('SyncTableLog', {
+            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            syncLogId,
+            tabla: result.tabla,
+            fechaInicio: fechaInicioTask,
+            fechaFinal: fechaFinalTask,
+            exitoso: true,
+            razon: null,
+            registrosLeidos: result.registrosLeidos,
+            registrosGuardados: result.registrosGuardados,
+            registrosActualizados: result.registrosActualizados,
+            duracionMs: fechaFinalTask.getTime() - fechaInicioTask.getTime(),
+            endpoint: result.endpoint,
+            detalles: null,
+          });
+        });
+
+        notify(
+          task.name,
+          currentTask,
+          totalTasks,
+          'success',
+          `${task.name} sincronizado`,
+        );
       } catch (error: any) {
         const msg = error?.message || 'Error desconocido';
-        console.error(`[FullSyncService] Error incremental en ${task.name}:`, msg);
+        console.error(
+          `[FullSyncService] Error incremental en ${task.name}:`,
+          msg,
+        );
         errors.push(`${task.name}: ${msg}`);
-        notify(task.name, currentTask, totalTasks, 'error', `Error en ${task.name}: ${msg}`);
+        notify(
+          task.name,
+          currentTask,
+          totalTasks,
+          'error',
+          `Error en ${task.name}: ${msg}`,
+        );
       }
     }
 
@@ -399,9 +512,9 @@ class FullSyncService {
     });
 
     const success = errors.length === 0;
-    console.log(
-      `[FullSyncService] Sincronización incremental completada. Éxito: ${success}, Errores: ${errors.length}`,
-    );
+    // console.log(
+    //   `[FullSyncService] Sincronización incremental completada. Éxito: ${success}, Errores: ${errors.length}`,
+    // );
 
     return {
       success,
@@ -442,9 +555,9 @@ class FullSyncService {
         });
       });
 
-      console.log(
-        `[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`,
-      );
+      // console.log(
+      //   `[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`,
+      // );
 
       // Crear orquestador y ejecutar todas las tareas
       const orchestrator = new SyncOrchestrator(
@@ -477,9 +590,9 @@ class FullSyncService {
         }
       });
 
-      console.log(
-        `[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`,
-      );
+      // console.log(
+      //   `[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`,
+      // );
 
       return {
         success: result.success,
@@ -552,9 +665,9 @@ class FullSyncService {
         });
       });
 
-      console.log(
-        `[FullSyncService] Iniciando sincronización de tabla: ${tableName} (ID: ${syncLogId})`,
-      );
+      // console.log(
+      //   `[FullSyncService] Iniciando sincronización de tabla: ${tableName} (ID: ${syncLogId})`,
+      // );
 
       // Crear orquestador y ejecutar tarea específica
       const orchestrator = new SyncOrchestrator(
@@ -588,9 +701,9 @@ class FullSyncService {
         }
       });
 
-      console.log(
-        `[FullSyncService] Sincronización de ${tableName} completada. Éxito: ${result.success}`,
-      );
+      // console.log(
+      //   `[FullSyncService] Sincronización de ${tableName} completada. Éxito: ${result.success}`,
+      // );
 
       return {
         success: result.success,
@@ -792,13 +905,13 @@ class FullSyncService {
           // Actualizar el saldo restando la cantidad vendida
           inventario.saldo = (inventario.saldo || 0) - item.cantidad;
           inventario.fechaArrastre = new Date();
-          console.log(
-            `[FullSync] Inventario actualizado: Producto ${
-              item.claveProd
-            }, Saldo anterior: ${
-              (inventario.saldo || 0) + item.cantidad
-            }, Nuevo saldo: ${inventario.saldo}`,
-          );
+          // console.log(
+          //   `[FullSync] Inventario actualizado: Producto ${
+          //     item.claveProd
+          //   }, Saldo anterior: ${
+          //     (inventario.saldo || 0) + item.cantidad
+          //   }, Nuevo saldo: ${inventario.saldo}`,
+          // );
         } else {
           console.warn(
             `[FullSync] No se encontró inventario para Producto ${item.claveProd} en Sucursal ${item.sucursal}`,
@@ -839,13 +952,13 @@ class FullSyncService {
           // Actualizar el saldo sumando la cantidad recibida
           inventario.saldo = (inventario.saldo || 0) + item.cantidad;
           inventario.fechaArrastre = new Date();
-          console.log(
-            `[FullSync] Inventario actualizado (recepción): Producto ${
-              item.claveProd
-            }, Saldo anterior: ${
-              (inventario.saldo || 0) - item.cantidad
-            }, Nuevo saldo: ${inventario.saldo}`,
-          );
+          // console.log(
+          //   `[FullSync] Inventario actualizado (recepción): Producto ${
+          //     item.claveProd
+          //   }, Saldo anterior: ${
+          //     (inventario.saldo || 0) - item.cantidad
+          //   }, Nuevo saldo: ${inventario.saldo}`,
+          // );
         } else {
           console.warn(
             `[FullSync] No se encontró inventario para Producto ${item.claveProd} en Sucursal ${item.sucursal}`,
@@ -1060,10 +1173,10 @@ class FullSyncService {
       query += ' AND sucursal == $2';
       args.push(sucursal);
     }
-    console.log(sucursal);
+    // console.log(sucursal);
     const ventas = this.realm.objects('Venta').filtered(query, ...args);
-    console.log(ventas);
-    console.log('Venta:', ventas);
+    // console.log(ventas);
+    // console.log('Venta:', ventas);
     let total = 0;
     for (let i = 0; i < ventas.length; i++) {
       const v: any = ventas[i];
@@ -1133,6 +1246,114 @@ class FullSyncService {
         .sorted('fechaInicio', true) // Más recientes primero
         .slice(offset, offset + limit),
     );
+  }
+
+  /**
+   * Envía las ventas locales pendientes al servidor.
+   * Solo envía ventas con id >= LOCAL_SALE_ID_THRESHOLD y noVenta === 0.
+   * Se puede usar desde SalesScreen o desde la sincronización periódica.
+   */
+  async sendPendingVentasToServer(
+    sucursal: number,
+    idUsuario: number,
+  ): Promise<{ success: boolean; sent: number; error?: string }> {
+    const LOCAL_SALE_ID_THRESHOLD = 1700000000;
+
+    try {
+      if (!this.isInitialized || !this.realm) {
+        await this.initialize();
+      }
+      if (!this.realm) {
+        return { success: false, sent: 0, error: 'Realm no inicializado' };
+      }
+
+      const ventasRealm = this.getVentas();
+
+      // Solo enviar ventas locales (id >= threshold) y sin número de venta asignado
+      const ventasLocales = ventasRealm.filter(
+        (venta: any) =>
+          venta.noVenta === 0 && venta.id >= LOCAL_SALE_ID_THRESHOLD,
+      );
+
+      console.log('[FullSyncService] Filtering local sales', {
+        totalVentas: ventasRealm.length,
+        localVentas: ventasLocales.length,
+        threshold: LOCAL_SALE_ID_THRESHOLD,
+      });
+
+      if (ventasLocales.length === 0) {
+        console.log('[FullSyncService] No pending ventas to send');
+        return { success: true, sent: 0 };
+      }
+
+      const payload = ventasLocales.map((venta: any) => {
+        const cliente = venta.cveCliente
+          ? this.getClienteFullById(venta.cveCliente)
+          : null;
+
+        return {
+          sucursal: venta.sucursal ?? sucursal,
+          clave_prod: venta.claveProd ?? 0,
+          Cant_producto: venta.cantProducto ?? 0,
+          precio: venta.precio ?? 0,
+          Cve_cliente: venta.cveCliente ?? 0,
+          fecha: (venta.fecha ?? new Date()).toISOString(),
+          tipo_pago: venta.tipoPago ?? 1,
+          usuario: idUsuario,
+          longitud: cliente?.longitud ?? 0,
+          latitud: cliente?.latitud ?? 0,
+          id_movil: venta.idMovil,
+          fechaTransfer: new Date().toISOString(),
+        };
+      });
+
+      console.log('[FullSyncService] Payload to send:', payload);
+
+      const url = `${
+        this.apiBaseUrl
+      }/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${encodeURIComponent(
+        String(sucursal),
+      )}&idUsuario=${encodeURIComponent(String(idUsuario))}`;
+
+      console.log('[FullSyncService] Sending ventas arrastre', {
+        url,
+        rows: payload.length,
+      });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.error(
+          '[FullSyncService] Error sending ventas arrastre',
+          response.status,
+          errorText,
+        );
+        return {
+          success: false,
+          sent: 0,
+          error: `HTTP ${response.status}: ${errorText}`,
+        };
+      }
+
+      console.log(
+        '[FullSyncService] Ventas arrastre sent successfully',
+        response.status,
+      );
+      return { success: true, sent: payload.length };
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : 'Error desconocido';
+      console.error('[FullSyncService] Error sending ventas arrastre', error);
+      return { success: false, sent: 0, error: errorMsg };
+    }
   }
 
   getStats(): any {

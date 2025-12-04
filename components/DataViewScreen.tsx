@@ -166,7 +166,7 @@ export default function DataViewScreen() {
   };
 
   const renderVenta = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
+    <TouchableOpacity onPress={() => consoleRealm('', item)}>
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>

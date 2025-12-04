@@ -244,13 +244,7 @@ export default function SalesScreen() {
 
   const processSale = async () => {
     const client = selectedClient;
-    console.log('[Sales] processSale called', {
-      client,
-      cartLength: cart.length,
-      metodoPago,
-      currentSucursal,
-      total,
-    });
+
     if (!client) {
       Alert.alert('Error', 'Selecciona un cliente');
       return;
@@ -266,7 +260,7 @@ export default function SalesScreen() {
 
     setProcessingSale(true);
     try {
-      const sucursal = currentSucursal || 1;
+      const sucursal = currentSucursal || 0;
       const saleIdMovil = buildMovilSaleId(sucursal);
       const inventarioBaseId = buildMovilSaleId(sucursal);
       const tipoPagoCode =
@@ -283,18 +277,8 @@ export default function SalesScreen() {
         '';
       const now = new Date();
 
-      // Función para convertir fecha a hora de México (UTC-6)
-      const toMexicoTime = (date: Date | string | null | undefined): Date => {
-        const d = date ? new Date(date) : new Date();
-        // Ajustar a UTC-6 (hora de México)
-        const mexicoOffset = -6 * 60; // -6 horas en minutos
-        const localOffset = d.getTimezoneOffset(); // offset actual en minutos
-        const diffMinutes = localOffset - mexicoOffset;
-        const mexicoDate = new Date(d.getTime() - diffMinutes * 60 * 1000);
-        return mexicoDate;
-      };
-
-      const nowMexico = toMexicoTime(now);
+      // Usar la fecha actual directamente (el dispositivo ya está en hora de México)
+      const nowMexico = now;
 
       await TicketPrinter.printSaleTicket({
         clientName: client.nombre,
@@ -317,7 +301,7 @@ export default function SalesScreen() {
         id: saleIdMovil + index,
         idMovil: saleIdMovil,
         sucursal,
-        noVenta: saleIdMovil,
+        noVenta: 0,
         claveProd: parseInt(item.claveProd || '0', 10) || null,
         nombreProducto: item.descripcion,
         cantProducto: item.cantidad,
@@ -349,6 +333,7 @@ export default function SalesScreen() {
       );
       console.log('[Sales] Inventory updated successfully');
 
+      // Enviar ventas pendientes al servidor usando la función reutilizable
       try {
         const idUsuarioRaw =
           (currentUser as any)?.idUsuario ?? (currentUser as any)?.id ?? 1;
@@ -356,76 +341,15 @@ export default function SalesScreen() {
           ? Number(idUsuarioRaw)
           : 1;
 
-        const ventasRealm = FullSyncService.getVentas();
-
-        // Solo enviar ventas locales (id >= threshold)
-        const ventasLocales = ventasRealm.filter(
-          (venta: any) => venta.id && venta.id >= LOCAL_SALE_ID_THRESHOLD,
+        const result = await FullSyncService.sendPendingVentasToServer(
+          sucursal,
+          idUsuario,
         );
 
-        console.log('[Sales] Filtering local sales', {
-          totalVentas: ventasRealm.length,
-          localVentas: ventasLocales.length,
-          threshold: LOCAL_SALE_ID_THRESHOLD,
-        });
-
-        const payload = ventasLocales.map((venta: any) => {
-          const cliente = venta.cveCliente
-            ? FullSyncService.getClienteFullById(venta.cveCliente)
-            : null;
-
-          return {
-            sucursal: venta.sucursal ?? sucursal,
-            clave_prod: venta.claveProd ?? 0,
-            Cant_producto: venta.cantProducto ?? 0,
-            precio: venta.precio ?? 0,
-            Cve_cliente: venta.cveCliente ?? 0,
-            fecha: (venta.fecha ?? now).toISOString(),
-            tipo_pago: venta.tipoPago ?? tipoPagoCode,
-            usuario: idUsuario,
-            longitud: cliente?.longitud ?? 0,
-            latitud: cliente?.latitud ?? 0,
-            id_movil: venta.idMovil,
-            fechaTransfer: new Date().toISOString(),
-          };
-        });
-
-        if (payload.length > 0) {
-          const url = `https://cbinfo.no-ip.info:9011/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${encodeURIComponent(
-            String(sucursal),
-          )}&idUsuario=${encodeURIComponent(String(idUsuario))}`;
-
-          console.log('[Sales] Sending ventas arrastre payload', {
-            url,
-            rows: payload.length,
-          });
-
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              accept: 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-          });
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => '');
-            console.error(
-              '[Sales] Error sending ventas arrastre',
-              response.status,
-              errorText,
-            );
-          } else {
-            console.log(
-              '[Sales] Ventas arrastre sent successfully',
-              response.status,
-            );
-          }
+        if (result.success) {
+          console.log('[Sales] Ventas arrastre sent successfully', result.sent);
         } else {
-          console.log(
-            '[Sales] No local ventas to send (all below threshold)',
-            saleIdMovil,
-          );
+          console.error('[Sales] Error sending ventas arrastre', result.error);
         }
       } catch (arrastreError) {
         console.error(

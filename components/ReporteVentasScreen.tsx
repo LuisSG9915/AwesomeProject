@@ -236,19 +236,10 @@ export default function ReporteVentasScreen() {
 
         if (soloLocales) {
           // Consultar Local: solo ventas con id >= threshold (ventas locales)
-          return (
-            inDateRange &&
-            inSucursal &&
-            venta.id &&
-            venta.id >= LOCAL_SALE_ID_THRESHOLD
-          );
+          return inDateRange && inSucursal && venta.noVenta == 0;
         } else {
           // Consultar: solo ventas con id < threshold (ventas remotas/API)
-          return (
-            inDateRange &&
-            inSucursal &&
-            (!venta.id || venta.id < LOCAL_SALE_ID_THRESHOLD)
-          );
+          return inDateRange && inSucursal && venta.noVenta > 0;
         }
       });
       consoleRealm('Filtered ventas', filtered);
