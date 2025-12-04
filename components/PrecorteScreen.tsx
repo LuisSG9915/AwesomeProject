@@ -106,7 +106,7 @@ export default function PrecorteScreen() {
       // Calcular total efectivo desde ventas (tipoPago 1) para la fecha seleccionada y sucursal actual
       const totalEf = FullSyncService.getVentasTotalEfectivoForDate(
         startOfDay,
-        sucursalUsuario,
+        sucursalUsuario ?? undefined,
       );
       setTotalEfectivo(totalEf);
     } catch (error) {

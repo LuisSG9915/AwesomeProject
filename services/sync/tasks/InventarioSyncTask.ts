@@ -18,9 +18,11 @@ export class InventarioSyncTask extends SyncTask {
   }
 
   getEndpoint(): string {
-    return `https://cbinfo.no-ip.info:9011/api/MovilesVentas/inventario-erp-movil/${this.sucursal}?fechaMovto=${new Date().toISOString()}`;
+    return `https://cbinfo.no-ip.info:9011/api/MovilesVentas/inventario-erp-movil/${
+      this.sucursal
+    }?fechaMovto=${new Date().toISOString()}`;
   }
-// fechaMovto
+  // fechaMovto
   getPriority(): number {
     return 5; // Quinta prioridad
   }
@@ -31,8 +33,10 @@ export class InventarioSyncTask extends SyncTask {
 
   async execute(): Promise<SyncTaskResult> {
     try {
-      console.log(`[InventarioSyncTask] Obteniendo inventario para sucursal ${this.sucursal}...`);
-      
+      console.log(
+        `[InventarioSyncTask] Obteniendo inventario para sucursal ${this.sucursal}...`,
+      );
+
       const response = await fetch(this.getEndpoint());
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -44,22 +48,31 @@ export class InventarioSyncTask extends SyncTask {
       let registrosGuardados = 0;
       let registrosActualizados = 0;
 
-      console.log(`[InventarioSyncTask] Leídos ${registrosLeidos} registros de inventario`);
+      console.log(
+        `[InventarioSyncTask] Leídos ${registrosLeidos} registros de inventario`,
+      );
 
       // Sincronizar con Realm
       this.realm.write(() => {
         for (const item of inventario) {
-          const existing = this.realm.objectForPrimaryKey('Inventario', item.id);
-          
+          const existing = this.realm.objectForPrimaryKey(
+            'Inventario',
+            item.id,
+          );
+
           const inventarioData = {
             ...item,
             sucursal: this.sucursal,
-            syncedAt: new Date(),
+            syncedAt: item.fechaArrastre,
             syncedAr: nowMexico,
           };
-
+          console.log(inventarioData);
           if (existing) {
-            this.realm.create('Inventario', inventarioData, UpdateMode.Modified);
+            this.realm.create(
+              'Inventario',
+              inventarioData,
+              UpdateMode.Modified,
+            );
             registrosActualizados++;
           } else {
             this.realm.create('Inventario', inventarioData);
@@ -68,7 +81,9 @@ export class InventarioSyncTask extends SyncTask {
         }
       });
 
-      console.log(`[InventarioSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`);
+      console.log(
+        `[InventarioSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`,
+      );
 
       return {
         success: true,

@@ -432,6 +432,73 @@ class FullSyncService {
             };
           },
         },
+        {
+          name: 'InventarioIncremental',
+          run: async () => {
+            const tableName = 'Inventario';
+            const url = `${
+              this.apiBaseUrl
+            }/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${new Date().toISOString()}`;
+
+            console.log('[Incremental] Inventario desde', url);
+
+            const response = await fetch(url, {
+              headers: { accept: 'application/octet-stream' },
+            });
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status} Inventario`);
+            }
+
+            const inventario = await response.json();
+            const registrosLeidos = Array.isArray(inventario)
+              ? inventario.length
+              : 0;
+            let registrosGuardados = 0;
+            let registrosActualizados = 0;
+
+            this.realm!.write(() => {
+              for (const item of inventario) {
+                const existing = this.realm!.objectForPrimaryKey(
+                  'Inventario',
+                  item.id,
+                );
+
+                const inventarioData = {
+                  ...item,
+                  sucursal: sucursal,
+                  syncedAt: item.fechaArrastre
+                    ? new Date(item.fechaArrastre)
+                    : new Date(),
+                  syncedAr: nowMexico,
+                };
+
+                if (existing) {
+                  this.realm!.create(
+                    'Inventario',
+                    inventarioData,
+                    UpdateMode.Modified,
+                  );
+                  registrosActualizados++;
+                } else {
+                  this.realm!.create('Inventario', inventarioData);
+                  registrosGuardados++;
+                }
+              }
+            });
+
+            console.log(
+              `[Incremental] Inventario leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+            );
+
+            return {
+              tabla: tableName,
+              endpoint: url,
+              registrosLeidos,
+              registrosGuardados,
+              registrosActualizados,
+            };
+          },
+        },
       ];
 
     const totalTasks = tasks.length;

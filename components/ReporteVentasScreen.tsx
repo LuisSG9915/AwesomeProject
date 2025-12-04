@@ -216,13 +216,6 @@ export default function ReporteVentasScreen() {
       const fecha2Parsed = new Date(fecha2);
       fecha2Parsed.setHours(23, 59, 59, 999);
 
-      console.log('[Reporte] Filtering ventas', {
-        soloLocales,
-        fecha1Parsed,
-        fecha2Parsed,
-        totalVentas: allVentas.length,
-        sucursalUsuario,
-      });
       const filtered = allVentas.filter(venta => {
         if (!venta.fecha) return false;
         const ventaDate = new Date(venta.fecha);
@@ -287,13 +280,6 @@ export default function ReporteVentasScreen() {
           displayId = noVenta;
           groupKey = `remote_${noVenta}_${sucursal}`;
         }
-
-        console.log('[Reporte] Grouping venta', {
-          id: venta.id,
-          noVenta: venta.noVenta,
-          sucursal: venta.sucursal,
-          groupKey,
-        });
 
         if (!groupedMap.has(groupKey)) {
           groupedMap.set(groupKey, {
