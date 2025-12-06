@@ -235,7 +235,6 @@ export default function ReporteVentasScreen() {
           return inDateRange && inSucursal && venta.noVenta > 0;
         }
       });
-      consoleRealm('Filtered ventas', filtered);
       console.log('[Reporte] Filtered results', { count: filtered.length });
 
       const mapped: ReporteItem[] = filtered.map(venta => ({

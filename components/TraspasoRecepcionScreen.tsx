@@ -77,6 +77,7 @@ export default function TraspasoRecepcionScreen() {
           (user.sucursal as number | null | undefined) ??
           1;
         setCurrentSucursal(sucursal);
+        setFormFiltro(prev => (prev.sucursal ? prev : { ...prev, sucursal }));
       }
 
       try {
@@ -338,21 +339,6 @@ export default function TraspasoRecepcionScreen() {
       <Text style={styles.title}>Traspasos</Text>
 
       <View style={styles.card}>
-        <View style={styles.row}>
-          <Icon
-            name="person"
-            type="material"
-            color={COLORS.primary}
-            size={24}
-          />
-          <Text style={styles.cardTitle}>Vendedor</Text>
-        </View>
-        <TextInput
-          value={'Usuario Actual'}
-          editable={false}
-          style={[styles.input, styles.disabledInput]}
-        />
-
         <View style={styles.row}>
           <Icon
             name="filter-list"

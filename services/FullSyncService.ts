@@ -388,13 +388,11 @@ class FullSyncService {
             let registrosGuardados = 0;
             let registrosActualizados = 0;
 
-            // Solo actualizar registros locales con id > 1700000000
-            // Buscar por idMovil y actualizar solo: noVenta, folioFactura, facturacionMovil
             this.realm!.write(() => {
               for (const venta of ventas) {
-                // Buscar registro local por idMovil donde id > 1700000000
+                // Buscar por idMovil: si existe, actualizar; si no, crear registro
                 const localVentas = this.realm!.objects('Venta').filtered(
-                  'idMovil == $0 AND id > 1700000000',
+                  'idMovil == $0',
                   venta.idMovil,
                 );
 
@@ -408,6 +406,30 @@ class FullSyncService {
                     (localVenta as any).syncedAt = nowMexico;
                     registrosActualizados++;
                   }
+                } else {
+                  // Crear registro porque no existe relación por idMovil en local
+                  this.realm!.create('Venta', {
+                    id: venta.id,
+                    idMovil: venta.idMovil ?? null,
+                    sucursal: venta.sucursal ?? null,
+                    noVenta: venta.noVenta ?? null,
+                    claveProd: venta.claveProd ?? null,
+                    nombreProducto: venta.nombreProducto ?? null,
+                    cantProducto: venta.cantProducto ?? null,
+                    precio: venta.precio ?? null,
+                    importe: venta.importe ?? null,
+                    cveCliente: venta.cveCliente ?? null,
+                    nombreCliente: venta.nombreCliente ?? null,
+                    fecha: venta.fecha ? new Date(venta.fecha) : null,
+                    tipoPago: venta.tipoPago ?? null,
+                    descripcionMedioPago: venta.descripcionMedioPago ?? null,
+                    vendedor: venta.vendedor ?? null,
+                    folioFactura: venta.folioFactura ?? false,
+                    facturacionMovil: venta.facturacionMovil ?? false,
+                    syncedAt: nowMexico,
+                    syncedAr: nowMexico,
+                  });
+                  registrosGuardados++;
                 }
               }
 
@@ -1232,8 +1254,7 @@ class FullSyncService {
     const end = new Date(date);
     end.setHours(23, 59, 59, 999);
 
-    let query =
-      'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and id < 17000000000';
+    let query = 'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and noVenta>0';
     const args: any[] = [start, end];
 
     if (sucursal !== undefined) {

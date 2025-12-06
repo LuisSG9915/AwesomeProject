@@ -63,7 +63,9 @@ export class InventarioSyncTask extends SyncTask {
           const inventarioData = {
             ...item,
             sucursal: this.sucursal,
-            syncedAt: item.fechaArrastre,
+            syncedAt: item.fechaArrastre
+              ? new Date(item.fechaArrastre)
+              : nowMexico,
             syncedAr: nowMexico,
           };
           console.log(inventarioData);
