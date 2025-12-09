@@ -388,56 +388,100 @@ class FullSyncService {
             let registrosGuardados = 0;
             let registrosActualizados = 0;
 
+            // Encontrar el registro con el ás alto del servidor
+            let maxIdVenta = null;
+            let maxId = 0;
+            for (const venta of ventas) {
+              if (venta.id && venta.id > maxId) {
+                maxId = venta.id;
+                maxIdVenta = venta;
+              }
+            }
+
+            // Obtener el fechaLog del registro con el ID más alto
+            const syncedArValue = maxIdVenta?.fecha ?? nowMexico;
+            console.log(ventas)
+            console.log(
+              `[Incremental] ID más alto del servidor: ${maxId}, fechaLog: ${syncedArValue}`,
+            );
+
             this.realm!.write(() => {
               for (const venta of ventas) {
-                // Buscar por idMovil: si existe, actualizar; si no, crear registro
-                const localVentas = this.realm!.objects('Venta').filtered(
-                  'idMovil == $0',
-                  venta.idMovil,
+                const idMovil = venta.idMovil ?? null;
+
+                // Primero verificar si existe por ID (primary key)
+                const existingById = this.realm!.objectForPrimaryKey(
+                  'Venta',
+                  venta.id,
                 );
 
-                if (localVentas.length > 0) {
-                  // Actualizar solo los campos específicos en cada registro encontrado
-                  for (const localVenta of localVentas) {
-                    (localVenta as any).noVenta = venta.noVenta;
-                    (localVenta as any).folioFactura = venta.folioFactura;
-                    (localVenta as any).facturacionMovil =
-                      venta.facturacionMovil;
-                    (localVenta as any).syncedAt = nowMexico;
-                    registrosActualizados++;
-                  }
+                if (existingById) {
+                  // Actualizar registro existente por ID
+                  (existingById as any).noVenta = venta.noVenta;
+                  (existingById as any).cantProducto = venta.cantProducto;
+                  (existingById as any).precio = venta.precio;
+                  (existingById as any).importe = venta.importe;
+                  (existingById as any).folioFactura = venta.folioFactura;
+                  (existingById as any).facturacionMovil = venta.facturacionMovil;
+                  (existingById as any).syncedAt = venta.fechaLog ?? nowMexico;
+                  registrosActualizados++;
                 } else {
-                  // Crear registro porque no existe relación por idMovil en local
-                  this.realm!.create('Venta', {
-                    id: venta.id,
-                    idMovil: venta.idMovil ?? null,
-                    sucursal: venta.sucursal ?? null,
-                    noVenta: venta.noVenta ?? null,
-                    claveProd: venta.claveProd ?? null,
-                    nombreProducto: venta.nombreProducto ?? null,
-                    cantProducto: venta.cantProducto ?? null,
-                    precio: venta.precio ?? null,
-                    importe: venta.importe ?? null,
-                    cveCliente: venta.cveCliente ?? null,
-                    nombreCliente: venta.nombreCliente ?? null,
-                    fecha: venta.fecha ? new Date(venta.fecha) : null,
-                    tipoPago: venta.tipoPago ?? null,
-                    descripcionMedioPago: venta.descripcionMedioPago ?? null,
-                    vendedor: venta.vendedor ?? null,
-                    folioFactura: venta.folioFactura ?? false,
-                    facturacionMovil: venta.facturacionMovil ?? false,
-                    syncedAt: nowMexico,
-                    syncedAr: nowMexico,
-                  });
-                  registrosGuardados++;
+                  // Buscar por idMovil Y claveProd exactos en registros locales (id > 1700000000)
+                  const localVentas =
+                    idMovil === null
+                      ? []
+                      : this.realm!.objects('Venta').filtered(
+                          'idMovil == $0 AND claveProd == $1 AND id > 1700000000',
+                          idMovil,
+                          venta.claveProd,
+                        );
+
+                  if (localVentas.length > 0) {
+                    // Actualizar solo los campos específicos en cada registro encontrado
+                    for (const localVenta of localVentas) {
+                      (localVenta as any).noVenta = venta.noVenta;
+                      (localVenta as any).cantProducto = venta.cantProducto;
+                      (localVenta as any).precio = venta.precio;
+                      (localVenta as any).importe = venta.importe;
+                      (localVenta as any).folioFactura = venta.folioFactura;
+                      (localVenta as any).facturacionMovil =
+                        venta.facturacionMovil;
+                      (localVenta as any).syncedAt = venta.fechaLog ?? nowMexico;
+                      registrosActualizados++;
+                    }
+                  } else {
+                    // Crear registro porque no existe ni por ID ni por idMovil
+                    this.realm!.create('Venta', {
+                      id: venta.id,
+                      idMovil: venta.idMovil ?? null,
+                      sucursal: venta.sucursal ?? null,
+                      noVenta: venta.noVenta ?? null,
+                      claveProd: venta.claveProd ?? null,
+                      nombreProducto: venta.nombreProducto ?? null,
+                      cantProducto: venta.cantProducto ?? null,
+                      precio: venta.precio ?? null,
+                      importe: venta.importe ?? null,
+                      cveCliente: venta.cveCliente ?? null,
+                      nombreCliente: venta.nombreCliente ?? null,
+                      fecha: venta.fecha ? new Date(venta.fecha) : null,
+                      tipoPago: venta.tipoPago ?? null,
+                      descripcionMedioPago: venta.descripcionMedioPago ?? null,
+                      vendedor: venta.vendedor ?? null,
+                      folioFactura: venta.folioFactura ?? false,
+                      facturacionMovil: venta.facturacionMovil ?? false,
+                      syncedAt: venta.fechaLog ?? nowMexico,
+                      syncedAr: syncedArValue,
+                    });
+                    registrosGuardados++;
+                  }
                 }
               }
 
-              // Actualizar syncedAr en TODOS los registros locales con id > 1700000000
+              // Actualizar syncedAr en TODOS los registros locales con el fechaLog del ID más alto del servidor
               const allLocalVentas =
-                this.realm!.objects('Venta').filtered('id > 1700000000');
+                this.realm!.objects('Venta');
               for (const localVenta of allLocalVentas) {
-                (localVenta as any).syncedAr = nowMexico;
+                (localVenta as any).syncedAr = syncedArValue;
               }
             });
 
@@ -1373,7 +1417,7 @@ class FullSyncService {
         console.log('[FullSyncService] No pending ventas to send');
         return { success: true, sent: 0 };
       }
-
+console.log(ventasLocales)
       const payload = ventasLocales.map((venta: any) => {
         const cliente = venta.cveCliente
           ? this.getClienteFullById(venta.cveCliente)
@@ -1466,6 +1510,342 @@ class FullSyncService {
       cartera: this.realm.objects('Cartera').length,
       clientes: this.realm.objects('ClienteFull').length,
     };
+  }
+
+  /**
+   * Elimina un registro de Venta por ID
+   */
+  deleteVenta(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const venta = this.realm!.objectForPrimaryKey('Venta', id);
+        if (venta) {
+          this.realm!.delete(venta);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar venta:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Cliente por ID
+   */
+  deleteCliente(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const cliente = this.realm!.objectForPrimaryKey('ClienteFull', id);
+        if (cliente) {
+          this.realm!.delete(cliente);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar cliente:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Producto por ID
+   */
+  deleteProducto(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const producto = this.realm!.objectForPrimaryKey('Producto', id);
+        if (producto) {
+          this.realm!.delete(producto);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar producto:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Precio por ID
+   */
+  deletePrecio(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const precio = this.realm!.objectForPrimaryKey('Precio', id);
+        if (precio) {
+          this.realm!.delete(precio);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar precio:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Inventario por ID
+   */
+  deleteInventario(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const inventario = this.realm!.objectForPrimaryKey('Inventario', id);
+        if (inventario) {
+          this.realm!.delete(inventario);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar inventario:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Cartera por ID
+   */
+  deleteCartera(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const cartera = this.realm!.objectForPrimaryKey('Cartera', id);
+        if (cartera) {
+          this.realm!.delete(cartera);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar cartera:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Usuario por ID
+   */
+  deleteUsuario(id: number): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const usuario = this.realm!.objectForPrimaryKey('Usuario', id);
+        if (usuario) {
+          this.realm!.delete(usuario);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar usuario:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un SyncLog por ID
+   */
+  async deleteSyncLog(id: string): Promise<boolean> {
+    try {
+      const realm = await Realm.open({
+        schema: [SyncLogSchema],
+        schemaVersion: 1,
+      });
+      
+      realm.write(() => {
+        const log = realm.objectForPrimaryKey('SyncLog', id);
+        if (log) {
+          realm.delete(log);
+        }
+      });
+      
+      realm.close();
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar sync log:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Ventas
+   */
+  deleteAllVentas(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const ventas = this.realm!.objects('Venta');
+        this.realm!.delete(ventas);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todas las ventas:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Clientes
+   */
+  deleteAllClientes(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const clientes = this.realm!.objects('ClienteFull');
+        this.realm!.delete(clientes);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todos los clientes:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Productos
+   */
+  deleteAllProductos(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const productos = this.realm!.objects('Producto');
+        this.realm!.delete(productos);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todos los productos:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Precios
+   */
+  deleteAllPrecios(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const precios = this.realm!.objects('Precio');
+        this.realm!.delete(precios);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todos los precios:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Inventario
+   */
+  deleteAllInventario(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const inventario = this.realm!.objects('Inventario');
+        this.realm!.delete(inventario);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todo el inventario:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Cartera
+   */
+  deleteAllCartera(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const cartera = this.realm!.objects('Cartera');
+        this.realm!.delete(cartera);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar toda la cartera:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Usuarios
+   */
+  deleteAllUsuarios(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const usuarios = this.realm!.objects('Usuario');
+        this.realm!.delete(usuarios);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todos los usuarios:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los SyncLogs
+   */
+  async deleteAllSyncLogs(): Promise<boolean> {
+    try {
+      const realm = await Realm.open({
+        schema: [SyncLogSchema],
+        schemaVersion: 1,
+      });
+      
+      realm.write(() => {
+        const logs = realm.objects('SyncLog');
+        realm.delete(logs);
+      });
+      
+      realm.close();
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todos los sync logs:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina TODOS los registros de Bitácora (SyncTableLog)
+   */
+  deleteAllSyncTableLogs(): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const logs = this.realm!.objects('SyncTableLog');
+        this.realm!.delete(logs);
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar todos los logs de bitácora:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Elimina un registro de Bitácora (SyncTableLog) por ID
+   */
+  deleteSyncTableLog(id: string): boolean {
+    if (!this.realm) return false;
+    try {
+      this.realm.write(() => {
+        const log = this.realm!.objectForPrimaryKey('SyncTableLog', id);
+        if (log) {
+          this.realm!.delete(log);
+        }
+      });
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar sync table log:', error);
+      return false;
+    }
   }
 
   close(): void {

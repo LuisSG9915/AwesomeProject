@@ -377,6 +377,19 @@ export default function SalesScreen() {
           )}\nPago: ${metodoPago}`,
         );
       }
+      // Ejecutar sincronización incremental de ventas después de procesar la venta
+      try {
+        console.log('[Sales] Esperando 1 segundo antes de sincronizar...');
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
+        console.log(
+          '[Sales] Ejecutando sincronización incremental de ventas...',
+        );
+        await FullSyncService.syncIncremental();
+        console.log('[Sales] Sincronización incremental completada');
+      } catch (syncError) {
+        console.error('[Sales] Error en sincronización incremental', syncError);
+        // No mostrar error al usuario, solo loguearlo
+      }
 
       // Limpiar formulario
       setCart([]);

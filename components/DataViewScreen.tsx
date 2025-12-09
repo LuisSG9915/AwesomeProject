@@ -165,14 +165,167 @@ export default function DataViewScreen() {
     }
   };
 
+  const handleDelete = async (id: number | string, type: EntityType) => {
+    Alert.alert(
+      'Confirmar eliminación',
+      `¿Estás seguro de que deseas eliminar este registro?`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              let success = false;
+
+              switch (type) {
+                case 'ventas':
+                  success = FullSyncService.deleteVenta(id as number);
+                  break;
+                case 'clientes':
+                  success = FullSyncService.deleteCliente(id as number);
+                  break;
+                case 'productos':
+                  success = FullSyncService.deleteProducto(id as number);
+                  break;
+                case 'precios':
+                  success = FullSyncService.deletePrecio(id as number);
+                  break;
+                case 'inventario':
+                  success = FullSyncService.deleteInventario(id as number);
+                  break;
+                case 'cartera':
+                  success = FullSyncService.deleteCartera(id as number);
+                  break;
+                case 'usuarios':
+                  success = FullSyncService.deleteUsuario(id as number);
+                  break;
+                case 'syncLogs':
+                  success = await FullSyncService.deleteSyncLog(id as string);
+                  break;
+                case 'bitacora':
+                  success = FullSyncService.deleteSyncTableLog(id as string);
+                  break;
+              }
+
+              if (success) {
+                Alert.alert('Éxito', 'Registro eliminado correctamente');
+                await loadData();
+              } else {
+                Alert.alert('Error', 'No se pudo eliminar el registro');
+              }
+            } catch (error) {
+              console.error('Error al eliminar:', error);
+              Alert.alert('Error', 'Ocurrió un error al eliminar el registro');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDeleteAll = async () => {
+    const count = getCount();
+    if (count === 0) {
+      Alert.alert('Información', 'No hay registros para eliminar');
+      return;
+    }
+
+    Alert.alert(
+      '⚠️ ADVERTENCIA',
+      `¿Estás COMPLETAMENTE SEGURO de que deseas eliminar TODOS los ${count} registros de ${
+        ENTITY_TABS.find(t => t.key === selectedTab)?.title
+      }?\n\nEsta acción NO se puede deshacer.`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'SÍ, ELIMINAR TODO',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              let success = false;
+
+              switch (selectedTab) {
+                case 'ventas':
+                  success = FullSyncService.deleteAllVentas();
+                  break;
+                case 'clientes':
+                  success = FullSyncService.deleteAllClientes();
+                  break;
+                case 'productos':
+                  success = FullSyncService.deleteAllProductos();
+                  break;
+                case 'precios':
+                  success = FullSyncService.deleteAllPrecios();
+                  break;
+                case 'inventario':
+                  success = FullSyncService.deleteAllInventario();
+                  break;
+                case 'cartera':
+                  success = FullSyncService.deleteAllCartera();
+                  break;
+                case 'usuarios':
+                  success = FullSyncService.deleteAllUsuarios();
+                  break;
+                case 'syncLogs':
+                  success = await FullSyncService.deleteAllSyncLogs();
+                  break;
+                case 'bitacora':
+                  success = FullSyncService.deleteAllSyncTableLogs();
+                  break;
+              }
+
+              if (success) {
+                Alert.alert(
+                  '✅ Éxito',
+                  `Todos los registros de ${
+                    ENTITY_TABS.find(t => t.key === selectedTab)?.title
+                  } han sido eliminados`,
+                );
+                await loadData();
+              } else {
+                Alert.alert('Error', 'No se pudieron eliminar los registros');
+              }
+            } catch (error) {
+              console.error('Error al eliminar todos:', error);
+              Alert.alert(
+                'Error',
+                'Ocurrió un error al eliminar los registros',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const renderVenta = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log('', item)}>
+    <TouchableOpacity onPress={() => console.log(item, 'ventas')}>
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>
-          <Text style={styles.cardSubtitle}>
-            {item.fecha?.toLocaleDateString()}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>
+            <Text style={styles.cardSubtitle}>
+              {item.fecha?.toLocaleDateString()}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => handleDelete(item.id, 'ventas')}
+            style={styles.deleteButton}
+          >
+            <Icon
+              name="delete"
+              type="material"
+              color={COLORS.error}
+              size={24}
+            />
+          </TouchableOpacity>
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardText}>Cliente: {item.nombreCliente}</Text>
@@ -193,151 +346,185 @@ export default function DataViewScreen() {
   );
 
   const renderCliente = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{item.nombre}</Text>
           <Text style={styles.cardSubtitle}>ID: {item.id}</Text>
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
-          <Text style={styles.cardText}>
-            Crédito: {item.credito ? 'Sí' : 'No'}
-          </Text>
-          <Text style={styles.cardText}>
-            Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
-          </Text>
-          {item.latitud && item.longitud ? (
-            <Text style={styles.cardText}>
-              Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
-            </Text>
-          ) : null}
-          {item.syncedAr && (
-            <Text style={styles.cardText}>
-              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id, 'clientes')}
+          style={styles.deleteButton}
+        >
+          <Icon name="delete" type="material" color={COLORS.error} size={24} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
+        <Text style={styles.cardText}>
+          Crédito: {item.credito ? 'Sí' : 'No'}
+        </Text>
+        <Text style={styles.cardText}>
+          Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
+        </Text>
+        {item.latitud && item.longitud ? (
+          <Text style={styles.cardText}>
+            Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
+          </Text>
+        ) : null}
+        {item.syncedAr && (
+          <Text style={styles.cardText}>
+            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 
   const renderProducto = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{item.descripcion}</Text>
           <Text style={styles.cardSubtitle}>Clave: {item.claveProd}</Text>
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardText}>ID: {item.id}</Text>
-          <Text style={styles.cardText}>
-            Es Kit: {item.esKit ? 'Sí' : 'No'}
-          </Text>
-          <Text style={styles.cardText}>
-            Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
-          </Text>
-          {item.syncedAr && (
-            <Text style={styles.cardText}>
-              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id, 'productos')}
+          style={styles.deleteButton}
+        >
+          <Icon name="delete" type="material" color={COLORS.error} size={24} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardText}>ID: {item.id}</Text>
+        <Text style={styles.cardText}>Es Kit: {item.esKit ? 'Sí' : 'No'}</Text>
+        <Text style={styles.cardText}>
+          Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
+        </Text>
+        {item.syncedAr && (
+          <Text style={styles.cardText}>
+            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 
   const renderPrecio = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{item.descripcion}</Text>
           <Text style={styles.cardPrice}>${item.precio?.toFixed(2)}</Text>
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
-          <Text style={styles.cardText}>Clave Producto: {item.claveProd}</Text>
-          <Text style={styles.cardText}>
-            Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
-          </Text>
-          {item.syncedAr && (
-            <Text style={styles.cardText}>
-              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id, 'precios')}
+          style={styles.deleteButton}
+        >
+          <Icon name="delete" type="material" color={COLORS.error} size={24} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
+        <Text style={styles.cardText}>Clave Producto: {item.claveProd}</Text>
+        <Text style={styles.cardText}>
+          Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
+        </Text>
+        {item.syncedAr && (
+          <Text style={styles.cardText}>
+            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 
   const renderInventario = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>Producto {item.claveProd}</Text>
           <Text style={styles.cardSubtitle}>Sucursal {item.sucursal}</Text>
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardText}>ID: {item.id}</Text>
-          <Text style={styles.cardPrice}>Saldo: {item.saldo}</Text>
-          <Text style={styles.cardText}>
-            Fecha Arrastre: {item.fechaArrastre?.toLocaleString() || 'N/A'}
-          </Text>
-          {item.syncedAr && (
-            <Text style={styles.cardText}>
-              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id, 'inventario')}
+          style={styles.deleteButton}
+        >
+          <Icon name="delete" type="material" color={COLORS.error} size={24} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardText}>ID: {item.id}</Text>
+        <Text style={styles.cardPrice}>Saldo: {item.saldo}</Text>
+        <Text style={styles.cardText}>
+          Fecha Arrastre: {item.fechaArrastre?.toLocaleString() || 'N/A'}
+        </Text>
+        {item.syncedAr && (
+          <Text style={styles.cardText}>
+            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 
   const renderCartera = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log('Cartera', item)}>
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{item.nombreCliente}</Text>
           <Text style={styles.cardPrice}>${item.saldo?.toFixed(2)}</Text>
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
-          <Text style={styles.cardText}>Sucursal: {item.sucursal}</Text>
-          <Text style={styles.cardText}>No. Venta: {item.noVenta}</Text>
-          <Text style={styles.cardText}>
-            Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
-          </Text>
-          {item.syncedAr && (
-            <Text style={styles.cardText}>
-              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id, 'cartera')}
+          style={styles.deleteButton}
+        >
+          <Icon name="delete" type="material" color={COLORS.error} size={24} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
+        <Text style={styles.cardText}>Sucursal: {item.sucursal}</Text>
+        <Text style={styles.cardText}>No. Venta: {item.noVenta}</Text>
+        <Text style={styles.cardText}>
+          Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
+        </Text>
+        {item.syncedAr && (
+          <Text style={styles.cardText}>
+            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 
   const renderUsuario = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item)}>
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{item.nombre}</Text>
           <Text style={styles.cardSubtitle}>{item.claveEmpleado}</Text>
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardText}>Perfil: {item.descripcionPerfil}</Text>
-          <Text style={styles.cardText}>Puesto: {item.descripcionPuesto}</Text>
-          <Text style={styles.cardText}>
-            Sucursal Origen: {item.sucursalOrigen}
-          </Text>
-          {item.syncedAr && (
-            <Text style={styles.cardText}>
-              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id, 'usuarios')}
+          style={styles.deleteButton}
+        >
+          <Icon name="delete" type="material" color={COLORS.error} size={24} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardText}>Perfil: {item.descripcionPerfil}</Text>
+        <Text style={styles.cardText}>Puesto: {item.descripcionPuesto}</Text>
+        <Text style={styles.cardText}>
+          Sucursal Origen: {item.sucursalOrigen}
+        </Text>
+        {item.syncedAr && (
+          <Text style={styles.cardText}>
+            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+          </Text>
+        )}
+      </View>
+    </View>
   );
 
   const renderSyncLog = ({ item }: { item: any }) => {
@@ -348,65 +535,79 @@ export default function DataViewScreen() {
     const statusIcon = item.exitoso ? 'check-circle' : 'error';
 
     return (
-      <TouchableOpacity onPress={() => console.log(item)}>
-        <View
-          style={[
-            styles.card,
-            { borderLeftWidth: 4, borderLeftColor: statusColor },
-          ]}
-        >
-          <View style={styles.cardHeader}>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-            >
-              <Icon
-                name={statusIcon}
-                type="material"
-                color={statusColor}
-                size={20}
-              />
-              <Text style={[styles.cardTitle, { color: statusColor }]}>
-                {item.exitoso ? 'Exitoso' : 'Error'}
-              </Text>
-            </View>
+      <View
+        style={[
+          styles.card,
+          { borderLeftWidth: 4, borderLeftColor: statusColor },
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              flex: 1,
+            }}
+          >
+            <Icon
+              name={statusIcon}
+              type="material"
+              color={statusColor}
+              size={20}
+            />
+            <Text style={[styles.cardTitle, { color: statusColor }]}>
+              {item.exitoso ? 'Exitoso' : 'Error'}
+            </Text>
             <Text style={styles.cardSubtitle}>
               {item.tipo === 'manual' ? '👤 Manual' : '🤖 Auto'}
             </Text>
           </View>
-          <View style={styles.cardBody}>
-            <Text style={styles.cardText}>
-              📅 Inicio: {item.fechaInicio?.toLocaleString('es-MX')}
-            </Text>
-            {item.fechaFinal && (
-              <Text style={styles.cardText}>
-                🏁 Final: {item.fechaFinal?.toLocaleString('es-MX')}
-              </Text>
-            )}
-            <Text style={styles.cardText}>⏱️ Duración: {duracionSeg}s</Text>
-            <Text style={styles.cardText}>
-              👤 Usuario: {item.usuario || 'N/A'}
-            </Text>
-            <Text style={styles.cardText}>
-              🏢 Sucursal: {item.sucursal || 'N/A'}
-            </Text>
-            <Text style={styles.cardText}>
-              📊 Registros: {item.totalRegistros || 0}
-            </Text>
-            {!item.exitoso && item.razon && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>❌ {item.razon}</Text>
-              </View>
-            )}
-            {item.ruta && (
-              <Text
-                style={[styles.cardText, { fontSize: 11, color: COLORS.muted }]}
-              >
-                🌐 {item.ruta}
-              </Text>
-            )}
-          </View>
+          <TouchableOpacity
+            onPress={() => handleDelete(item.id, 'syncLogs')}
+            style={styles.deleteButton}
+          >
+            <Icon
+              name="delete"
+              type="material"
+              color={COLORS.error}
+              size={24}
+            />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>
+            📅 Inicio: {item.fechaInicio?.toLocaleString('es-MX')}
+          </Text>
+          {item.fechaFinal && (
+            <Text style={styles.cardText}>
+              🏁 Final: {item.fechaFinal?.toLocaleString('es-MX')}
+            </Text>
+          )}
+          <Text style={styles.cardText}>⏱️ Duración: {duracionSeg}s</Text>
+          <Text style={styles.cardText}>
+            👤 Usuario: {item.usuario || 'N/A'}
+          </Text>
+          <Text style={styles.cardText}>
+            🏢 Sucursal: {item.sucursal || 'N/A'}
+          </Text>
+          <Text style={styles.cardText}>
+            📊 Registros: {item.totalRegistros || 0}
+          </Text>
+          {!item.exitoso && item.razon && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>❌ {item.razon}</Text>
+            </View>
+          )}
+          {item.ruta && (
+            <Text
+              style={[styles.cardText, { fontSize: 11, color: COLORS.muted }]}
+            >
+              🌐 {item.ruta}
+            </Text>
+          )}
+        </View>
+      </View>
     );
   };
 
@@ -420,18 +621,20 @@ export default function DataViewScreen() {
       (item.registrosActualizados || 0);
 
     return (
-      <TouchableOpacity onPress={() => console.log(item)}>
-        <View style={[styles.card, !item.exitoso && styles.cardError]}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>{item.tabla}</Text>
-              <Text style={styles.cardSubtitle}>
-                {item.fechaInicio
-                  ? new Date(item.fechaInicio).toLocaleString()
-                  : 'N/A'}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
+      <View style={[styles.card, !item.exitoso && styles.cardError]}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{item.tabla}</Text>
+            <Text style={styles.cardSubtitle}>
+              {item.fechaInicio
+                ? new Date(item.fechaInicio).toLocaleString()
+                : 'N/A'}
+            </Text>
+          </View>
+          <View
+            style={{ alignItems: 'flex-end', flexDirection: 'row', gap: 8 }}
+          >
+            <View style={{ alignItems: 'center' }}>
               <Icon
                 name={item.exitoso ? 'check-circle' : 'error'}
                 type="material"
@@ -447,39 +650,50 @@ export default function DataViewScreen() {
                 {item.exitoso ? 'Éxito' : 'Error'}
               </Text>
             </View>
-          </View>
-          <View style={styles.cardBody}>
-            <Text style={styles.cardText}>⏱️ Duración: {duracionSeg}s</Text>
-            <Text style={styles.cardText}>
-              📊 Leídos: {item.registrosLeidos || 0} | 💾 Guardados:{' '}
-              {item.registrosGuardados || 0} | 🔄 Actualizados:{' '}
-              {item.registrosActualizados || 0}
-            </Text>
-            <Text style={styles.cardText}>
-              📈 Total procesados: {totalRegistros}
-            </Text>
-            {!item.exitoso && item.razon && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>❌ {item.razon}</Text>
-              </View>
-            )}
-            {item.endpoint && (
-              <Text
-                style={[styles.cardText, { fontSize: 11, color: COLORS.muted }]}
-              >
-                🌐 {item.endpoint}
-              </Text>
-            )}
-            {item.detalles && (
-              <Text
-                style={[styles.cardText, { fontSize: 10, color: COLORS.muted }]}
-              >
-                📋 {JSON.stringify(item.detalles)}
-              </Text>
-            )}
+            <TouchableOpacity
+              onPress={() => handleDelete(item.id, 'bitacora')}
+              style={styles.deleteButton}
+            >
+              <Icon
+                name="delete"
+                type="material"
+                color={COLORS.error}
+                size={24}
+              />
+            </TouchableOpacity>
           </View>
         </View>
-      </TouchableOpacity>
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>⏱️ Duración: {duracionSeg}s</Text>
+          <Text style={styles.cardText}>
+            📊 Leídos: {item.registrosLeidos || 0} | 💾 Guardados:{' '}
+            {item.registrosGuardados || 0} | 🔄 Actualizados:{' '}
+            {item.registrosActualizados || 0}
+          </Text>
+          <Text style={styles.cardText}>
+            📈 Total procesados: {totalRegistros}
+          </Text>
+          {!item.exitoso && item.razon && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>❌ {item.razon}</Text>
+            </View>
+          )}
+          {item.endpoint && (
+            <Text
+              style={[styles.cardText, { fontSize: 11, color: COLORS.muted }]}
+            >
+              🌐 {item.endpoint}
+            </Text>
+          )}
+          {item.detalles && (
+            <Text
+              style={[styles.cardText, { fontSize: 10, color: COLORS.muted }]}
+            >
+              📋 {JSON.stringify(item.detalles)}
+            </Text>
+          )}
+        </View>
+      </View>
     );
   };
 
@@ -580,6 +794,15 @@ export default function DataViewScreen() {
         <Text style={styles.statsText}>
           Mostrando {data.length} de {getCount()} registros
         </Text>
+        {getCount() > 0 && (
+          <TouchableOpacity
+            style={styles.deleteAllButton}
+            onPress={handleDeleteAll}
+          >
+            <Icon name="delete-sweep" type="material" color="#fff" size={20} />
+            <Text style={styles.deleteAllButtonText}>Eliminar Todo</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Pagination Controls */}
@@ -741,11 +964,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.m,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   statsText: {
     fontSize: 14,
     color: COLORS.textSecondary,
     fontWeight: '500',
+    flex: 1,
+  },
+  deleteAllButton: {
+    backgroundColor: COLORS.error,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderRadius: BORDER_RADIUS.m,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    ...SHADOWS.small,
+  },
+  deleteAllButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
   listContent: {
     padding: SPACING.m,
@@ -823,6 +1065,12 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     color: COLORS.muted,
+  },
+  deleteButton: {
+    padding: SPACING.s,
+    borderRadius: BORDER_RADIUS.m,
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    marginLeft: SPACING.s,
   },
   paginationContainer: {
     flexDirection: 'row',
