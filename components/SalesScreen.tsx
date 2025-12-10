@@ -36,6 +36,7 @@ type Producto = {
   claveProd: string;
   descripcion: string;
   precio: number;
+  existencia: number;
 };
 
 type CartItem = Producto & { cantidad: number };
@@ -63,6 +64,9 @@ export default function SalesScreen() {
   const [currentSucursal, setCurrentSucursal] = useState<number>(1);
   const [initializingPrinter, setInitializingPrinter] = useState(true);
   const [processingSale, setProcessingSale] = useState(false);
+  const [quantityInputs, setQuantityInputs] = useState<{
+    [id: number]: string;
+  }>({});
 
   const LOCAL_SALE_ID_THRESHOLD = 1700000000000;
 
@@ -114,9 +118,10 @@ export default function SalesScreen() {
       setClientes(clientesFormateados);
       setFilteredClientes(clientesFormateados);
 
-      // Cargar productos con precios
+      // Cargar productos con precios e inventario
       const productosData = FullSyncService.getProductos(1000);
       const preciosData = FullSyncService.getPrecios(5000);
+      const inventarioData = FullSyncService.getInventario();
 
       // Crear mapa de precios por claveProd
       const preciosMap = new Map();
@@ -126,12 +131,32 @@ export default function SalesScreen() {
         }
       });
 
-      const productosFormateados = productosData.map((p: any) => ({
-        id: p.id,
-        claveProd: p.claveProd || '',
-        descripcion: p.descripcion || 'Sin descripción',
-        precio: preciosMap.get(parseInt(p.claveProd)) || 0,
-      }));
+      // Crear mapa de inventario por claveProd para la sucursal actual
+      const inventarioMap = new Map<number, number>();
+      inventarioData
+        .filter((i: any) => i.sucursal == currentSucursal)
+        .forEach((i: any) => {
+          const clave = i.claveProd;
+          if (clave === null || clave === undefined) return;
+          const saldoActual = inventarioMap.get(clave) || 0;
+          inventarioMap.set(clave, saldoActual + (i.saldo || 0));
+        });
+
+      const productosFormateados = productosData
+        .map((p: any) => {
+          const claveProdNum = parseInt(p.claveProd);
+          const existencia = inventarioMap.get(claveProdNum) || 0;
+
+          return {
+            id: p.id,
+            claveProd: p.claveProd || '',
+            descripcion: p.descripcion || 'Sin descripción',
+            precio: preciosMap.get(claveProdNum) || 0,
+            existencia,
+          };
+        })
+        .filter((p: Producto) => p.existencia > 0); // Solo productos con existencia
+
       setProductos(productosFormateados);
       setFilteredProductos(productosFormateados);
     } catch (error) {
@@ -194,8 +219,19 @@ export default function SalesScreen() {
     setCart(prev => {
       const idx = prev.findIndex(ci => ci.id === p.id);
       if (idx >= 0) {
+        const nuevaCantidad = prev[idx].cantidad + 1;
+
+        // Validar que no exceda existencia
+        if (nuevaCantidad > p.existencia) {
+          Alert.alert(
+            'Existencia insuficiente',
+            `Solo hay ${p.existencia} unidades disponibles de ${p.descripcion}`,
+          );
+          return prev;
+        }
+
         const cp = [...prev];
-        cp[idx] = { ...cp[idx], cantidad: cp[idx].cantidad + 1 };
+        cp[idx] = { ...cp[idx], cantidad: nuevaCantidad };
         return cp;
       }
       return [...prev, { ...p, cantidad: 1 }];
@@ -205,7 +241,23 @@ export default function SalesScreen() {
 
   const updateQuantity = (id: number, cantidad: number) => {
     if (cantidad <= 0) return;
-    setCart(prev => prev.map(ci => (ci.id === id ? { ...ci, cantidad } : ci)));
+
+    setCart(prev => {
+      return prev.map(ci => {
+        if (ci.id === id) {
+          // Validar que no exceda existencia
+          if (cantidad > ci.existencia) {
+            Alert.alert(
+              'Existencia insuficiente',
+              `Solo hay ${ci.existencia} unidades disponibles de ${ci.descripcion}`,
+            );
+            return ci;
+          }
+          return { ...ci, cantidad };
+        }
+        return ci;
+      });
+    });
   };
 
   const removeFromCart = (id: number) => {
@@ -223,6 +275,8 @@ export default function SalesScreen() {
       const preciosCliente = FullSyncService.getPreciosByCliente(
         selectedClient.id,
       );
+      const inventarioData = FullSyncService.getInventario();
+
       // Crear mapa de precios por claveProd
       const preciosMap = new Map();
       preciosCliente.forEach((p: any) => {
@@ -231,16 +285,36 @@ export default function SalesScreen() {
         }
       });
 
-      const productosFormateados = preciosCliente.map((p: any) => ({
-        id: p.id,
-        claveProd: p.claveProd || '',
-        descripcion: p.descripcion || 'Sin descripción',
-        precio: preciosMap.get(parseInt(p.claveProd)) || 0,
-      }));
+      // Crear mapa de inventario por claveProd para la sucursal actual
+      const inventarioMap = new Map<number, number>();
+      inventarioData
+        .filter((i: any) => i.sucursal == currentSucursal)
+        .forEach((i: any) => {
+          const clave = i.claveProd;
+          if (clave === null || clave === undefined) return;
+          const saldoActual = inventarioMap.get(clave) || 0;
+          inventarioMap.set(clave, saldoActual + (i.saldo || 0));
+        });
+
+      const productosFormateados = preciosCliente
+        .map((p: any) => {
+          const claveProdNum = parseInt(p.claveProd);
+          const existencia = inventarioMap.get(claveProdNum) || 0;
+
+          return {
+            id: p.id,
+            claveProd: p.claveProd || '',
+            descripcion: p.descripcion || 'Sin descripción',
+            precio: preciosMap.get(claveProdNum) || 0,
+            existencia,
+          };
+        })
+        .filter((p: Producto) => p.existencia > 0); // Solo productos con existencia
+
       setProductos(productosFormateados);
       setFilteredProductos(productosFormateados);
     }
-  }, [selectedClient]);
+  }, [selectedClient, currentSucursal]);
 
   const processSale = async () => {
     const client = selectedClient;
@@ -489,11 +563,38 @@ export default function SalesScreen() {
                     <TextInput
                       style={styles.qtyInput}
                       keyboardType="number-pad"
-                      value={String(item.cantidad)}
+                      value={quantityInputs[item.id] ?? String(item.cantidad)}
                       onChangeText={t => {
-                        const n = parseInt(t || '0', 10);
-                        if (Number.isFinite(n) && n > 0)
+                        // Permitir cualquier valor mientras escribe
+                        if (!/^\d*$/.test(t)) {
+                          return;
+                        }
+                        setQuantityInputs(prev => ({ ...prev, [item.id]: t }));
+                        if (t === '') {
+                          // Campo vacío, no actualizar aún
+                          return;
+                        }
+                        const n = parseInt(t, 10);
+                        if (Number.isFinite(n) && n >= 0) {
                           updateQuantity(item.id, n);
+                        }
+                      }}
+                      onBlur={() => {
+                        // Al salir del campo, si está vacío o es 0, poner 1
+                        const currentText = quantityInputs[item.id];
+                        if (!currentText || currentText === '0') {
+                          updateQuantity(item.id, 1);
+                        } else {
+                          const n = parseInt(currentText, 10);
+                          if (Number.isFinite(n) && n > 0) {
+                            updateQuantity(item.id, n);
+                          }
+                        }
+                        setQuantityInputs(prev => {
+                          const next = { ...prev };
+                          delete next[item.id];
+                          return next;
+                        });
                       }}
                     />
                   </View>
@@ -700,6 +801,9 @@ export default function SalesScreen() {
                       <Text style={styles.listTitle}>{item.descripcion}</Text>
                       <Text style={styles.listSubtitle}>
                         Clave: {item.claveProd}
+                      </Text>
+                      <Text style={styles.listSubtitle}>
+                        Existencia: {item.existencia}
                       </Text>
                     </View>
                     <Text style={styles.productPrice}>
