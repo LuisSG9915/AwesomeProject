@@ -10,11 +10,12 @@ import BackgroundFetch from 'react-native-background-fetch';
 AppRegistry.registerComponent(appName, () => App);
 
 /**
- * HeadlessTask para sincronización en segundo plano
- * Se ejecuta incluso cuando la app está cerrada o la pantalla apagada
+ * HeadlessTask para sincronización en segundo plano (BackgroundFetch)
+ * Se ejecuta como respaldo cada ~15 minutos cuando la app está cerrada
  * 
- * IMPORTANTE: Este es el ÚNICO punto de entrada para sincronización en segundo plano.
- * Usa la misma lógica que BackgroundSyncService para mantener consistencia.
+ * NOTA: El servicio principal de sincronización es PersistentSyncService
+ * que usa react-native-background-actions (Foreground Service).
+ * Este HeadlessTask actúa como respaldo si el Foreground Service se detiene.
  */
 const HeadlessTask = async (event) => {
   const taskId = event.taskId;
@@ -26,7 +27,7 @@ const HeadlessTask = async (event) => {
     return;
   }
 
-  console.log('[HeadlessTask] Ejecutando sincronización en segundo plano:', taskId);
+  console.log('[HeadlessTask] Ejecutando sincronización de respaldo:', taskId);
 
   try {
     // Importar dinámicamente los servicios necesarios
@@ -42,16 +43,21 @@ const HeadlessTask = async (event) => {
       return;
     }
 
-    const sucursal = user.sucursal_origen || user.sucursal || 0;
+    const sucursal = user.sucursal_origen || user.sucursal || 1;
+    const idUsuario = user.id || user.idUsuario || 1;
     console.log('[HeadlessTask] Sincronizando sucursal:', sucursal);
     
-    // Ejecutar sincronización usando la arquitectura escalable
-    // FullSyncService.syncAll() ya maneja:
-    // - SyncLog principal
-    // - SyncTableLog por tabla
-    // - Retry logic
-    // - Manejo de errores
-    const result = await FullSyncService.syncAll(sucursal, (progress) => {
+    // Primero enviar ventas pendientes
+    const ventasResult = await FullSyncService.sendPendingVentasToServer(
+      sucursal,
+      idUsuario,
+    );
+    if (ventasResult.success && ventasResult.sent > 0) {
+      console.log(`[HeadlessTask] Ventas pendientes enviadas: ${ventasResult.sent}`);
+    }
+    
+    // Ejecutar sincronización incremental (más ligera que syncAll)
+    const result = await FullSyncService.syncIncremental(sucursal, (progress) => {
       console.log('[HeadlessTask] Progreso:', progress.entity, progress.status);
     });
     

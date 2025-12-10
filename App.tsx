@@ -33,10 +33,12 @@ import ClienteGruposScreen from './components/ClienteGruposScreen';
 import DataViewScreen from './components/DataViewScreen';
 import PrinterSettingsScreen from './components/PrinterSettingsScreen';
 import AuthService from './services/AuthService';
-import FullSyncService, { SyncProgress } from './services/FullSyncService';
+import FullSyncService from './services/FullSyncService';
+import { SyncProgress } from './services/sync/SyncTask';
 import SyncProgressModal from './components/SyncProgressModal';
 import BluetoothPrinterService from './services/BluetoothPrinterService';
 import BackgroundSyncService from './services/BackgroundSyncService';
+import PersistentSyncService from './services/PersistentSyncService';
 import SyncStatusPanel from './components/SyncStatusPanel';
 import {
   APP_NAME,
@@ -195,10 +197,11 @@ function AppContent({ navigation }: { navigation: any }) {
     };
     loadUserInfo();
 
-    // Iniciar sincronización automática en segundo plano
+    // Usar SOLO BackgroundSyncService para evitar conflictos
+    // El mutex en FullSyncService previene ejecuciones concurrentes
     BackgroundSyncService.start();
 
-    // Detener sincronización al desmontar
+    // Detener sincronización al desmontar (logout)
     return () => {
       BackgroundSyncService.stop();
     };

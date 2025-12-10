@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { Icon } from 'react-native-elements';
 import AuthService from '../services/AuthService';
-import FullSyncService, { SyncProgress } from '../services/FullSyncService';
+import FullSyncService from '../services/FullSyncService';
+import { SyncProgress } from '../services/sync/SyncTask';
 import SyncProgressModal from './SyncProgressModal';
 import {
   APP_NAME,

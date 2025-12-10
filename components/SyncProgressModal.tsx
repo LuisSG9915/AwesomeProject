@@ -7,7 +7,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { SyncProgress } from '../services/FullSyncService';
+import { SyncProgress } from '../services/sync/SyncTask';
 import { COLORS } from '../theme/theme';
 
 interface SyncProgressModalProps {

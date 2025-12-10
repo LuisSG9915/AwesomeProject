@@ -97,8 +97,9 @@ class BackgroundSyncService {
       this.performSync();
     }, this.SYNC_INTERVAL_MS);
 
-    // Ejecutar primera sincronización inmediatamente
-    this.performSync();
+    // NO ejecutar inmediatamente - esperar el intervalo completo
+    // Esto evita colisión con la sincronización inicial del login
+    console.log('[BackgroundSync] Primera sincronización automática en 1 minuto');
   }
 
   /**

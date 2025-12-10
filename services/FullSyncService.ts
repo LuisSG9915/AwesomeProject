@@ -9,6 +9,7 @@ class FullSyncService {
   private realm: Realm | null = null;
   private isInitialized = false;
   private apiBaseUrl = 'https://cbinfo.no-ip.info:9011';
+  private isSyncing = false; // MUTEX: Prevenir sincronizaciones concurrentes
 
   async initialize(): Promise<void> {
     if (this.isInitialized && this.realm && !this.realm.isClosed) {
@@ -101,13 +102,23 @@ class FullSyncService {
     sucursal: number = 1,
     onProgress?: SyncProgressCallback,
   ): Promise<{ success: boolean; error?: string }> {
-    if (!this.isInitialized) {
-      await this.initialize();
+    // MUTEX: Prevenir sincronizaciones concurrentes
+    if (this.isSyncing) {
+      console.warn('[FullSyncService] Ya hay una sincronización en curso - IGNORANDO incremental');
+      return { success: false, error: 'Sincronización ya en curso' };
     }
 
-    if (!this.realm) {
-      throw new Error('Realm no inicializado');
-    }
+    this.isSyncing = true;
+    console.log('[FullSyncService] 🔒 Sincronización incremental iniciada (mutex activado)');
+
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      if (!this.realm) {
+        throw new Error('Realm no inicializado');
+      }
 
     // Crear SyncLog principal específico para incremental
     const syncLogId = `${Date.now()}-${Math.random()
@@ -653,6 +664,14 @@ class FullSyncService {
       success,
       error: success ? undefined : errors.join('; '),
     };
+    } catch (error: any) {
+      console.error('[FullSyncService] Error crítico en incremental:', error);
+      return { success: false, error: error?.message || 'Error crítico' };
+    } finally {
+      // MUTEX: Liberar el lock siempre
+      this.isSyncing = false;
+      console.log('[FullSyncService] 🔓 Sincronización incremental finalizada (mutex liberado)');
+    }
   }
 
   /**
@@ -663,13 +682,23 @@ class FullSyncService {
     sucursal: number = 1,
     onProgress?: SyncProgressCallback,
   ): Promise<{ success: boolean; error?: string }> {
-    if (!this.isInitialized) {
-      await this.initialize();
+    // MUTEX: Prevenir sincronizaciones concurrentes
+    if (this.isSyncing) {
+      console.warn('[FullSyncService] Ya hay una sincronización en curso - IGNORANDO');
+      return { success: false, error: 'Sincronización ya en curso' };
     }
 
-    if (!this.realm) {
-      throw new Error('Realm no inicializado');
-    }
+    this.isSyncing = true;
+    console.log('[FullSyncService] 🔒 Sincronización iniciada (mutex activado)');
+
+    try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
+      if (!this.realm) {
+        throw new Error('Realm no inicializado');
+      }
 
     // Crear SyncLog principal
     const syncLogId = `${Date.now()}-${Math.random()
@@ -761,6 +790,14 @@ class FullSyncService {
       }
 
       return { success: false, error: error?.message };
+    }
+    } catch (error: any) {
+      console.error('[FullSyncService] Error crítico:', error);
+      return { success: false, error: error?.message || 'Error crítico' };
+    } finally {
+      // MUTEX: Liberar el lock siempre
+      this.isSyncing = false;
+      console.log('[FullSyncService] 🔓 Sincronización finalizada (mutex liberado)');
     }
   }
 

@@ -2,21 +2,28 @@
  * SyncStatusPanel
  *
  * Panel informativo que muestra el estado de la sincronización automática.
- * Se actualiza en tiempo real y muestra:
+ * Usa BackgroundSyncService para sincronización en segundo plano.
+ *
+ * Muestra:
  * - Estado actual (sincronizando, exitoso, error)
  * - Última sincronización
  * - Próxima sincronización
  * - Progreso actual
  * - Contador de sincronizaciones
+ * - Control para activar/desactivar sincronización automática
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Switch,
+  Alert,
+  Linking,
+  Platform,
 } from 'react-native';
 import { Icon } from 'react-native-elements';
 import BackgroundSyncService, {
@@ -35,12 +42,20 @@ export default function SyncStatusPanel({
     BackgroundSyncService.getState(),
   );
   const [timeUntilNext, setTimeUntilNext] = useState<string | null>(null);
+  const [isBackgroundSyncEnabled, setIsBackgroundSyncEnabled] =
+    useState<boolean>(false);
 
   useEffect(() => {
+    // Verificar si el servicio está corriendo al iniciar
+    setIsBackgroundSyncEnabled(BackgroundSyncService.isActive());
+
     // Suscribirse a cambios de estado
-    const unsubscribe = BackgroundSyncService.subscribe(newState => {
-      setState(newState);
-    });
+    const unsubscribe = BackgroundSyncService.subscribe(
+      (newState: BackgroundSyncState) => {
+        setState(newState);
+        setIsBackgroundSyncEnabled(newState.status !== 'idle');
+      },
+    );
 
     // Actualizar contador cada segundo
     const intervalId = setInterval(() => {
@@ -52,6 +67,58 @@ export default function SyncStatusPanel({
       clearInterval(intervalId);
     };
   }, []);
+
+  // Solicitar desactivar optimización de batería (Android)
+  const requestBatteryOptimizationDisable = useCallback(async () => {
+    if (Platform.OS === 'android') {
+      try {
+        await Linking.openSettings();
+      } catch (error) {
+        console.error('Error abriendo configuración:', error);
+      }
+    }
+  }, []);
+
+  // Toggle del servicio de sincronización automática
+  const handleToggleBackgroundSync = useCallback(
+    async (enabled: boolean) => {
+      if (enabled) {
+        // Mostrar advertencia sobre batería
+        Alert.alert(
+          'Sincronización Automática',
+          'Esta función mantiene la sincronización activa en segundo plano cada 1 minuto.\n\n⚠️ Consumirá más batería.\n\nPara mejor funcionamiento, desactiva la optimización de batería para esta app en Configuración.',
+          [
+            {
+              text: 'Configurar Batería',
+              onPress: () => {
+                requestBatteryOptimizationDisable();
+                // Iniciar servicio después de mostrar config
+                setTimeout(() => {
+                  BackgroundSyncService.start();
+                  setIsBackgroundSyncEnabled(true);
+                }, 500);
+              },
+            },
+            {
+              text: 'Activar Ahora',
+              onPress: () => {
+                BackgroundSyncService.start();
+                setIsBackgroundSyncEnabled(true);
+              },
+            },
+            {
+              text: 'Cancelar',
+              style: 'cancel',
+            },
+          ],
+        );
+      } else {
+        BackgroundSyncService.stop();
+        setIsBackgroundSyncEnabled(false);
+      }
+    },
+    [requestBatteryOptimizationDisable],
+  );
 
   const getStatusIcon = () => {
     switch (state.status) {
@@ -95,11 +162,11 @@ export default function SyncStatusPanel({
       case 'syncing':
         return 'Sincronizando...';
       case 'success':
-        return 'Sincronizado';
+        return 'Activo';
       case 'error':
         return 'Error';
       default:
-        return 'Inactivo';
+        return 'Detenido';
     }
   };
 
@@ -139,21 +206,49 @@ export default function SyncStatusPanel({
           {getStatusIcon()}
           <Text style={styles.title}>Sincronización Automática</Text>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.syncButton,
-            state.status === 'syncing' && styles.syncButtonDisabled,
-          ]}
-          onPress={handleManualSync}
-          disabled={state.status === 'syncing'}
-        >
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={[
+              styles.syncButton,
+              state.status === 'syncing' && styles.syncButtonDisabled,
+            ]}
+            onPress={handleManualSync}
+            disabled={state.status === 'syncing'}
+          >
+            <Icon
+              name="sync"
+              type="material"
+              color={state.status === 'syncing' ? COLORS.muted : COLORS.primary}
+              size={18}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Toggle de sincronización persistente */}
+      <View style={styles.toggleContainer}>
+        <View style={styles.toggleLeft}>
           <Icon
-            name="sync"
+            name="battery-charging-full"
             type="material"
-            color={state.status === 'syncing' ? COLORS.muted : COLORS.primary}
-            size={18}
+            color={isBackgroundSyncEnabled ? COLORS.success : COLORS.muted}
+            size={20}
           />
-        </TouchableOpacity>
+          <View style={styles.toggleTextContainer}>
+            <Text style={styles.toggleTitle}>Pantalla Apagada</Text>
+            <Text style={styles.toggleSubtitle}>
+              {isBackgroundSyncEnabled
+                ? 'Sincroniza cada 1 minuto'
+                : 'Desactivado'}
+            </Text>
+          </View>
+        </View>
+        <Switch
+          value={isBackgroundSyncEnabled}
+          onValueChange={handleToggleBackgroundSync}
+          trackColor={{ false: COLORS.muted, true: COLORS.primaryLight }}
+          thumbColor={isBackgroundSyncEnabled ? COLORS.primary : '#f4f3f4'}
+        />
       </View>
 
       <View style={styles.content}>
@@ -243,6 +338,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.s,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+  },
   title: {
     fontSize: 16,
     fontWeight: '600',
@@ -258,6 +358,33 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: SPACING.s,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    padding: SPACING.s,
+    borderRadius: BORDER_RADIUS.s,
+    marginBottom: SPACING.s,
+  },
+  toggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.s,
+    flex: 1,
+  },
+  toggleTextContainer: {
+    flex: 1,
+  },
+  toggleTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  toggleSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
   },
   row: {
     flexDirection: 'row',
