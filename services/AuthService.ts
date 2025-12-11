@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import FullSyncService from './FullSyncService';
 
 const API_BASE_URL = 'https://cbinfo.no-ip.info:9011';
 
@@ -53,7 +54,33 @@ class AuthService {
       );
     }
 
+    // Configurar contexto de usuario para bitácoras
+    this.configurarContextoBitacora(user);
+
     return user;
+  }
+
+  /**
+   * Configura el contexto de usuario para el sistema de bitácoras
+   */
+  private configurarContextoBitacora(user: Usuario): void {
+    try {
+      const userId = user.idEmpleado || user.id || 0;
+      const userName = user.nombre || user.claveEmpleado || 'Desconocido';
+      const sucursal = user.sucursal || user.sucursal_origen || 1;
+
+      FullSyncService.setUserContext(userId, userName, sucursal);
+      console.log('[AuthService] ✅ Contexto de bitácora configurado:', {
+        userId,
+        userName,
+        sucursal,
+      });
+    } catch (error) {
+      console.error(
+        '[AuthService] ⚠️ Error configurando contexto de bitácora:',
+        error,
+      );
+    }
   }
 
   async restoreSession(): Promise<Usuario | null> {
@@ -71,6 +98,10 @@ class AuthService {
       const parsed: Usuario = JSON.parse(stored);
       console.log('Session restored:', parsed);
       this._currentUser = parsed;
+
+      // Configurar contexto de usuario para bitácoras al restaurar sesión
+      this.configurarContextoBitacora(parsed);
+
       return parsed;
     } catch (error) {
       console.error('No fue posible restaurar la sesión:', error);

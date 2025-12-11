@@ -351,8 +351,15 @@ export default function SalesScreen() {
         '';
       const now = new Date();
 
-      // Usar la fecha actual directamente (el dispositivo ya está en hora de México)
-      const nowMexico = now;
+      // Formatear fecha como string en horario local mexicano
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      const ms = String(now.getMilliseconds()).padStart(3, '0');
+      const fechaMX = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
 
       await TicketPrinter.printSaleTicket({
         clientName: client.nombre,
@@ -365,7 +372,7 @@ export default function SalesScreen() {
         })),
         total: total,
         businessName: APP_NAME,
-        date: nowMexico,
+        date: now,
         ticketNumber: String(saleIdMovil),
         sellerName: vendedor,
         branch: sucursal,
@@ -383,7 +390,7 @@ export default function SalesScreen() {
         importe: item.precio * item.cantidad,
         cveCliente: client.id,
         nombreCliente: client.nombre,
-        fecha: nowMexico,
+        fecha: fechaMX,
         tipoPago: tipoPagoCode,
         descripcionMedioPago,
         vendedor,

@@ -14,6 +14,7 @@ import { Icon } from 'react-native-elements';
 import TicketPrinter from '../services/TicketPrinter';
 import FullSyncService from '../services/FullSyncService';
 import AuthService, { Usuario } from '../services/AuthService';
+import { bitacoraService } from '../services/BitacoraService';
 import {
   COLORS,
   SPACING,
@@ -54,7 +55,7 @@ export default function BillingScreen() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   const [currentUser, setCurrentUser] = useState<Usuario | null>(null);
-  const [currentSucursal, setCurrentSucursal] = useState<number>(0);
+  const [currentSucursal, setCurrentSucursal] = useState<number | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const filteredClients = useMemo(() => {
@@ -63,9 +64,19 @@ export default function BillingScreen() {
     return clients.filter(c => c.cliente.toLowerCase().includes(t));
   }, [searchTerm, clients]);
 
+  const toMexicoDate = (date: Date | string | null = null): Date => {
+    const d = date ? new Date(date) : new Date();
+    const mexicoOffset = -6 * 60; // -6 horas en minutos
+    const localOffset = d.getTimezoneOffset();
+    const diffMinutes = localOffset - mexicoOffset;
+    return new Date(d.getTime() - diffMinutes * 60 * 1000);
+  };
+
   useEffect(() => {
     const loadUser = async () => {
       const user = await AuthService.restoreSession();
+      setCurrentUser(user);
+      setCurrentSucursal(user?.sucursal_origen || user?.sucursal || null);
       if (user) {
         setCurrentUser(user);
         const sucursal =
@@ -188,6 +199,16 @@ export default function BillingScreen() {
       const baseId = buildMovilCarteraId(sucursal);
       const now = new Date();
 
+      // Formatear fecha como string en horario local mexicano
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      const ms = String(now.getMilliseconds()).padStart(3, '0');
+      const fechaMX = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
+
       // Determinar tipo de pago: 1=efectivo, 2=transferencia
       const tipoPago = efectivo ? 1 : transferencia ? 2 : 0;
 
@@ -202,7 +223,7 @@ export default function BillingScreen() {
           sucursal,
           sucursalSegmento: origen?.sucursalSegmento ?? null,
           saldo: -Math.abs(saldoOriginal),
-          fecha: now,
+          fecha: fechaMX,
           idSegmento: origen?.idSegmento ?? inv.idSegmento ?? null,
           noVenta: origen?.noVenta ?? null,
           tipoPago,
@@ -227,17 +248,21 @@ export default function BillingScreen() {
             (row: any) => row.id > 170000000,
           );
 
-          // Función para convertir fecha a hora de México (UTC-6)
-          const toMexicoTime = (
+          // Serializar fecha: formatear como ISO pero interpretando el Date como si ya fuera hora MX
+          const formatMexicoDate = (
             date: Date | string | null | undefined,
           ): string => {
-            const d = date ? new Date(date) : new Date();
-            // Ajustar a UTC-6 (hora de México)
-            const mexicoOffset = -6 * 60; // -6 horas en minutos
-            const localOffset = d.getTimezoneOffset(); // offset actual en minutos
-            const diffMinutes = localOffset - mexicoOffset;
-            const mexicoDate = new Date(d.getTime() - diffMinutes * 60 * 1000);
-            return mexicoDate.toISOString();
+            const d =
+              date instanceof Date ? date : date ? new Date(date) : new Date();
+            // Extraer componentes del Date (ya ajustado a MX) y formatear manualmente
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            const ms = String(d.getMilliseconds()).padStart(3, '0');
+            return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
           };
 
           const payload = carteraFiltrada.map((m: any) => ({
@@ -246,7 +271,7 @@ export default function BillingScreen() {
             sucursal: m.sucursal,
             sucursalSegmento: m.sucursalSegmento,
             saldo: m.saldo,
-            fecha: toMexicoTime(m.fecha),
+            fecha: formatMexicoDate(m.fecha),
             idSegmento: m.idSegmento,
             noVenta: m.noVenta,
             cobrado: m.cobrado ?? 1,
@@ -254,18 +279,23 @@ export default function BillingScreen() {
             tipoPago: m.tipoPago ?? 0,
             idUsuario: currentUser ? currentUser.id : 0,
           }));
-          console.log(
-            `[Billing] Sending ${payload.length} records from cartera (id > 170000000)`,
-          );
-          console.log(payload);
+
           const url = `https://cbinfo.no-ip.info:9011/api/MovilesVentas/sp_MovilesCobranzaArrastreJSON?sucursal=${encodeURIComponent(
             String(sucursal),
           )}&idUsuario=${encodeURIComponent(String(currentUser?.id ?? 0))}`;
 
-          console.log('[Billing] Sending cobranza arrastre payload', {
+          // ========================================
+          // BITÁCORA: Registrar inicio de arrastre de cobranza
+          // ========================================
+          const bitacoraId = await bitacoraService.registrarInicioSync(
+            'ArrastreCobranza',
+            'manual',
             url,
-            rows: payload.length,
-          });
+          );
+
+          console.log(
+            `[Billing] 📤 Arrastre cobranza: ${payload.length} registros`,
+          );
 
           const response = await fetch(url, {
             method: 'POST',
@@ -279,19 +309,32 @@ export default function BillingScreen() {
           if (!response.ok) {
             const errorText = await response.text().catch(() => '');
             console.error(
-              '[Billing] Error sending cobranza arrastre',
+              '[Billing] ❌ Error arrastre cobranza',
               response.status,
               errorText,
             );
+            // BITÁCORA: Registrar error
+            await bitacoraService.registrarFinSync(bitacoraId, {
+              exitoso: false,
+              registrosLeidos: carteraFiltrada.length,
+              error: new Error(`HTTP ${response.status}: ${errorText}`),
+              detalles: { endpoint: url },
+            });
           } else {
             console.log(
-              '[Billing] Cobranza arrastre sent successfully',
-              response.status,
+              `[Billing] ✅ Arrastre cobranza exitoso: ${payload.length} registros`,
             );
+            // BITÁCORA: Registrar éxito
+            await bitacoraService.registrarFinSync(bitacoraId, {
+              exitoso: true,
+              registrosLeidos: carteraFiltrada.length,
+              registrosGuardados: payload.length,
+              detalles: { endpoint: url },
+            });
           }
         } catch (syncError) {
           console.error(
-            '[Billing] Error syncing cobranza to server:',
+            '[Billing] ❌ Error syncing cobranza to server:',
             syncError,
           );
           // No bloqueamos el flujo si falla la sincronización

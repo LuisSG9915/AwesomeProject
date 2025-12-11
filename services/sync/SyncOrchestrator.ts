@@ -7,6 +7,7 @@ import { ClientesSyncTask } from './tasks/ClientesSyncTask';
 import { InventarioSyncTask } from './tasks/InventarioSyncTask';
 import { CarteraSyncTask } from './tasks/CarteraSyncTask';
 import { VentasSyncTask } from './tasks/VentasSyncTask';
+import { bitacoraService } from '../BitacoraService';
 
 /**
  * Orquestador de sincronización
@@ -61,7 +62,7 @@ export class SyncOrchestrator {
     // Función recursiva para agregar tareas
     const addTask = (task: SyncTask): void => {
       const tableName = task.getTableName();
-      
+
       if (completed.has(tableName)) {
         return;
       }
@@ -80,7 +81,9 @@ export class SyncOrchestrator {
     };
 
     // Ordenar por prioridad inicial
-    const tasksByPriority = [...tasks].sort((a, b) => a.getPriority() - b.getPriority());
+    const tasksByPriority = [...tasks].sort(
+      (a, b) => a.getPriority() - b.getPriority(),
+    );
 
     // Construir orden final con dependencias
     for (const task of tasksByPriority) {
@@ -91,7 +94,7 @@ export class SyncOrchestrator {
   }
 
   /**
-   * Ejecuta todas las tareas de sincronización
+   * Ejecuta todas las tareas de sincronización con bitácora de sesión
    */
   async executeAll(): Promise<{
     success: boolean;
@@ -103,8 +106,16 @@ export class SyncOrchestrator {
     const results = new Map<string, SyncTaskResult>();
     const errors: string[] = [];
 
-    console.log(`[SyncOrchestrator] Iniciando sincronización de ${sortedTasks.length} tareas`);
-    console.log(`[SyncOrchestrator] Orden de ejecución:`, sortedTasks.map(t => t.getTableName()));
+    // Registrar inicio de sesión de sincronización
+    const sesionId = await bitacoraService.registrarInicioSesion('completa');
+
+    console.log(
+      `[SyncOrchestrator] Iniciando sincronización de ${sortedTasks.length} tareas (Sesión: ${sesionId})`,
+    );
+    console.log(
+      `[SyncOrchestrator] Orden de ejecución:`,
+      sortedTasks.map(t => t.getTableName()),
+    );
 
     let current = 0;
     const total = sortedTasks.length;
@@ -124,16 +135,25 @@ export class SyncOrchestrator {
       }
 
       try {
-        console.log(`[SyncOrchestrator] Ejecutando tarea: ${task.getTableName()}`);
-        
+        console.log(
+          `[SyncOrchestrator] Ejecutando tarea: ${task.getTableName()}`,
+        );
+
         const result = await task.executeWithLogging();
         results.set(task.getTableName(), result);
 
         if (!result.success) {
-          errors.push(`${task.getTableName()}: ${result.error || 'Error desconocido'}`);
-          console.error(`[SyncOrchestrator] Error en ${task.getTableName()}:`, result.error);
+          errors.push(
+            `${task.getTableName()}: ${result.error || 'Error desconocido'}`,
+          );
+          console.error(
+            `[SyncOrchestrator] Error en ${task.getTableName()}:`,
+            result.error,
+          );
         } else {
-          console.log(`[SyncOrchestrator] Tarea ${task.getTableName()} completada exitosamente`);
+          console.log(
+            `[SyncOrchestrator] Tarea ${task.getTableName()} completada exitosamente`,
+          );
         }
 
         // Notificar estado final de esta tarea
@@ -143,9 +163,11 @@ export class SyncOrchestrator {
             total,
             entity: task.getTableName(),
             status: result.success ? 'success' : 'error',
-            message: result.success 
-              ? `${task.getTableName()} sincronizado` 
-              : `Error en ${task.getTableName()}: ${result.error || 'Error desconocido'}`,
+            message: result.success
+              ? `${task.getTableName()} sincronizado`
+              : `Error en ${task.getTableName()}: ${
+                  result.error || 'Error desconocido'
+                }`,
           });
         }
       } catch (error) {
@@ -153,11 +175,14 @@ export class SyncOrchestrator {
           success: false,
           error: error instanceof Error ? error.message : 'Error desconocido',
         };
-        
+
         results.set(task.getTableName(), errorResult);
         errors.push(`${task.getTableName()}: ${errorResult.error}`);
-        
-        console.error(`[SyncOrchestrator] Error crítico en ${task.getTableName()}:`, error);
+
+        console.error(
+          `[SyncOrchestrator] Error crítico en ${task.getTableName()}:`,
+          error,
+        );
 
         // Notificar error
         if (this.onProgress) {
@@ -166,7 +191,9 @@ export class SyncOrchestrator {
             total,
             entity: task.getTableName(),
             status: 'error',
-            message: `Error crítico en ${task.getTableName()}: ${errorResult.error}`,
+            message: `Error crítico en ${task.getTableName()}: ${
+              errorResult.error
+            }`,
           });
         }
       }
@@ -176,9 +203,36 @@ export class SyncOrchestrator {
     }
 
     const success = errors.length === 0;
-    
-    console.log(`[SyncOrchestrator] Sincronización completada. Éxito: ${success}, Errores: ${errors.length}`);
-    
+
+    // Calcular estadísticas para la sesión
+    let totalRegistros = 0;
+    let tablasExitosas = 0;
+    let tablasConError = 0;
+
+    results.forEach(result => {
+      if (result.success) {
+        tablasExitosas++;
+        totalRegistros +=
+          (result.registrosGuardados || 0) +
+          (result.registrosActualizados || 0);
+      } else {
+        tablasConError++;
+      }
+    });
+
+    // Registrar fin de sesión de sincronización
+    await bitacoraService.registrarFinSesion(sesionId, {
+      totalTablas: total,
+      tablasExitosas,
+      tablasConError,
+      totalRegistros,
+      errores: errors.length > 0 ? errors : undefined,
+    });
+
+    console.log(
+      `[SyncOrchestrator] Sincronización completada. Éxito: ${success}, Errores: ${errors.length}`,
+    );
+
     if (errors.length > 0) {
       console.log(`[SyncOrchestrator] Resumen de errores:`, errors);
     }
@@ -196,14 +250,14 @@ export class SyncOrchestrator {
   async executeTask(tableName: string): Promise<SyncTaskResult | null> {
     const tasks = this.createAllTasks();
     const task = tasks.find(t => t.getTableName() === tableName);
-    
+
     if (!task) {
       console.error(`[SyncOrchestrator] Tarea no encontrada: ${tableName}`);
       return null;
     }
 
     console.log(`[SyncOrchestrator] Ejecutando tarea individual: ${tableName}`);
-    
+
     // Notificar progreso
     if (this.onProgress) {
       this.onProgress({
@@ -224,8 +278,8 @@ export class SyncOrchestrator {
         total: 1,
         entity: tableName,
         status: result.success ? 'success' : 'error',
-        message: result.success 
-          ? `${tableName} sincronizado` 
+        message: result.success
+          ? `${tableName} sincronizado`
           : `Error en ${tableName}: ${result.error || 'Error desconocido'}`,
       });
     }

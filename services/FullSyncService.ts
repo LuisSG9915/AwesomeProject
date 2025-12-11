@@ -2,6 +2,8 @@ import Realm, { UpdateMode } from 'realm';
 import { ALL_SCHEMAS, SyncLogSchema } from './RealmSchemas';
 import { SyncOrchestrator } from './sync/SyncOrchestrator';
 import { SyncProgress } from './sync/SyncTask';
+import { bitacoraService } from './BitacoraService';
+import { deviceInfoService } from './DeviceInfoService';
 
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
@@ -10,6 +12,11 @@ class FullSyncService {
   private isInitialized = false;
   private apiBaseUrl = 'https://cbinfo.no-ip.info:9011';
   private isSyncing = false; // MUTEX: Prevenir sincronizaciones concurrentes
+
+  // Contexto de usuario para bitácora
+  private currentUserId: number | null = null;
+  private currentUserName: string | null = null;
+  private currentSucursal: number = 1;
 
   async initialize(): Promise<void> {
     if (this.isInitialized && this.realm && !this.realm.isClosed) {
@@ -20,7 +27,7 @@ class FullSyncService {
       this.realm = await Realm.open({
         path: 'FullSyncDB',
         schema: ALL_SCHEMAS,
-        schemaVersion: 6, // v6: SyncTableLogSchema + syncedAr en tablas de datos
+        schemaVersion: 7, // v7: BitacoraSync + BitacoraSesion para bitácora completa
         onMigration: (oldRealm: Realm, newRealm: Realm) => {
           const newCartera = newRealm.objects('Cartera');
           for (let i = 0; i < newCartera.length; i++) {
@@ -32,9 +39,12 @@ class FullSyncService {
         },
       });
 
+      // Inicializar BitacoraService con el realm
+      bitacoraService.setRealm(this.realm);
+
       this.isInitialized = true;
       console.log(
-        '✅ FullSyncService inicializado correctamente (v5 con SyncTableLog)',
+        '✅ FullSyncService inicializado correctamente (v7 con BitacoraSync)',
       );
     } catch (error) {
       console.error('❌ Error al inicializar FullSyncService:', error);
@@ -79,11 +89,107 @@ class FullSyncService {
   }
 
   /**
-   * Obtiene la fecha/hora actual.
-   * El dispositivo ya está en hora de México, no se requiere conversión.
+   * Convierte una fecha al horario de México (UTC-6) y retorna un Date en ese timezone.
+   */
+  private toMexicoDate(date: Date | string | null = null): Date {
+    const d = date ? new Date(date) : new Date();
+    // México UTC-6 (sin horario de verano aquí): offset = -360 minutos
+    const mexicoOffset = -6 * 60;
+    const localOffset = d.getTimezoneOffset();
+    const diffMinutes = localOffset - mexicoOffset;
+    return new Date(d.getTime() - diffMinutes * 60 * 1000);
+  }
+
+  /**
+   * Obtiene la fecha/hora actual en horario de México.
    */
   private getMexicoNow(): Date {
-    return new Date();
+    return this.toMexicoDate();
+  }
+
+  /**
+   * Configura el contexto de usuario para bitácoras
+   * Debe llamarse después del login del usuario
+   */
+  setUserContext(userId: number, userName: string, sucursal: number): void {
+    this.currentUserId = userId;
+    this.currentUserName = userName;
+    this.currentSucursal = sucursal;
+
+    // Propagar contexto al BitacoraService
+    bitacoraService.setUserContext(userId, userName, sucursal);
+
+    console.log(
+      `[FullSyncService] Contexto configurado: ${userName} (${userId}) - Sucursal ${sucursal}`,
+    );
+  }
+
+  /**
+   * Obtiene el contexto de usuario actual
+   */
+  getUserContext(): {
+    userId: number | null;
+    userName: string | null;
+    sucursal: number;
+  } {
+    return {
+      userId: this.currentUserId,
+      userName: this.currentUserName,
+      sucursal: this.currentSucursal,
+    };
+  }
+
+  /**
+   * Envía las bitácoras pendientes de los últimos 3 días al servidor
+   * Se ejecuta automáticamente durante la sincronización periódica
+   */
+  async enviarBitacorasPendientes(): Promise<{
+    success: boolean;
+    enviadas: number;
+    error?: string;
+  }> {
+    console.log('[FullSyncService] Iniciando arrastre de bitácoras...');
+
+    try {
+      // Enviar bitácoras de tablas
+      const resultBitacoras = await bitacoraService.enviarBitacorasPendientes();
+
+      // Enviar sesiones
+      const resultSesiones = await bitacoraService.enviarSesionesPendientes();
+
+      // Limpiar bitácoras antiguas (más de 7 días)
+      bitacoraService.limpiarBitacorasAntiguas();
+
+      const totalEnviadas = resultBitacoras.enviadas + resultSesiones.enviadas;
+
+      console.log(`[FullSyncService] Bitácoras enviadas: ${totalEnviadas}`);
+
+      return {
+        success: resultBitacoras.success && resultSesiones.success,
+        enviadas: totalEnviadas,
+        error: resultBitacoras.error || resultSesiones.error,
+      };
+    } catch (error: any) {
+      console.error('[FullSyncService] Error en arrastre de bitácoras:', error);
+      return {
+        success: false,
+        enviadas: 0,
+        error: error?.message || 'Error desconocido',
+      };
+    }
+  }
+
+  /**
+   * Obtiene estadísticas de bitácora
+   */
+  getBitacoraStats(): {
+    totalBitacoras: number;
+    bitacorasPendientes: number;
+    bitacorasExitosas: number;
+    bitacorasConError: number;
+    ultimaSincronizacion: Date | null;
+  } {
+    return bitacoraService.getEstadisticas();
   }
 
   /**
@@ -104,12 +210,16 @@ class FullSyncService {
   ): Promise<{ success: boolean; error?: string }> {
     // MUTEX: Prevenir sincronizaciones concurrentes
     if (this.isSyncing) {
-      console.warn('[FullSyncService] Ya hay una sincronización en curso - IGNORANDO incremental');
+      console.warn(
+        '[FullSyncService] Ya hay una sincronización en curso - IGNORANDO incremental',
+      );
       return { success: false, error: 'Sincronización ya en curso' };
     }
 
     this.isSyncing = true;
-    console.log('[FullSyncService] 🔒 Sincronización incremental iniciada (mutex activado)');
+    console.log(
+      '[FullSyncService] 🔒 Sincronización incremental iniciada (mutex activado)',
+    );
 
     try {
       if (!this.isInitialized) {
@@ -120,52 +230,60 @@ class FullSyncService {
         throw new Error('Realm no inicializado');
       }
 
-    // Crear SyncLog principal específico para incremental
-    const syncLogId = `${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-    const fechaInicio = new Date();
+      // Crear SyncLog principal específico para incremental
+      const syncLogId = `${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      const fechaInicio = new Date();
 
-    this.realm.write(() => {
-      this.realm!.create('SyncLog', {
-        id: syncLogId,
-        fechaInicio,
-        exitoso: true,
-        tipo: 'incremental',
-      } as any);
-    });
+      this.realm.write(() => {
+        this.realm!.create('SyncLog', {
+          id: syncLogId,
+          fechaInicio,
+          exitoso: true,
+          tipo: 'incremental',
+        } as any);
+      });
 
-    // console.log(
-    //   `[FullSyncService] Iniciando sincronización incremental (ID: ${syncLogId})`,
-    // );
+      // ========================================
+      // BITÁCORA: Registrar inicio de sesión incremental
+      // ========================================
+      const sesionBitacoraId = await bitacoraService.registrarInicioSesion(
+        'incremental',
+      );
+      console.log(
+        `[FullSyncService] 📝 Sesión de bitácora iniciada: ${sesionBitacoraId}`,
+      );
 
-    const errors: string[] = [];
-    const nowMexico = this.getMexicoNow();
+      const errors: string[] = [];
+      const nowMexico = this.getMexicoNow();
 
-    const notify = (
-      entity: string,
-      current: number,
-      total: number,
-      status: SyncProgress['status'],
-      message: string,
-    ) => {
-      if (onProgress) {
-        onProgress({ current, total, entity, status, message });
-      }
-    };
+      const notify = (
+        entity: string,
+        current: number,
+        total: number,
+        status: SyncProgress['status'],
+        message: string,
+      ) => {
+        if (onProgress) {
+          onProgress({ current, total, entity, status, message });
+        }
+      };
 
-    // Tipo para resultado de tarea incremental
-    type IncrementalTaskResult = {
-      tabla: string;
-      endpoint: string;
-      registrosLeidos: number;
-      registrosGuardados: number;
-      registrosActualizados: number;
-    };
+      // Tipo para resultado de tarea incremental
+      type IncrementalTaskResult = {
+        tabla: string;
+        endpoint: string;
+        registrosLeidos: number;
+        registrosGuardados: number;
+        registrosActualizados: number;
+      };
 
-    // Orden fijo de tablas incrementales
-    const tasks: { name: string; run: () => Promise<IncrementalTaskResult> }[] =
-      [
+      // Orden fijo de tablas incrementales
+      const tasks: {
+        name: string;
+        run: () => Promise<IncrementalTaskResult>;
+      }[] = [
         {
           name: 'ClientesIncremental',
           run: async () => {
@@ -411,7 +529,7 @@ class FullSyncService {
 
             // Obtener el fechaLog del registro con el ID más alto
             const syncedArValue = maxIdVenta?.fecha ?? nowMexico;
-            console.log(ventas)
+            console.log(ventas);
             console.log(
               `[Incremental] ID más alto del servidor: ${maxId}, fechaLog: ${syncedArValue}`,
             );
@@ -433,7 +551,8 @@ class FullSyncService {
                   (existingById as any).precio = venta.precio;
                   (existingById as any).importe = venta.importe;
                   (existingById as any).folioFactura = venta.folioFactura;
-                  (existingById as any).facturacionMovil = venta.facturacionMovil;
+                  (existingById as any).facturacionMovil =
+                    venta.facturacionMovil;
                   (existingById as any).syncedAt = venta.fechaLog ?? nowMexico;
                   registrosActualizados++;
                 } else {
@@ -457,7 +576,8 @@ class FullSyncService {
                       (localVenta as any).folioFactura = venta.folioFactura;
                       (localVenta as any).facturacionMovil =
                         venta.facturacionMovil;
-                      (localVenta as any).syncedAt = venta.fechaLog ?? nowMexico;
+                      (localVenta as any).syncedAt =
+                        venta.fechaLog ?? nowMexico;
                       registrosActualizados++;
                     }
                   } else {
@@ -489,8 +609,7 @@ class FullSyncService {
               }
 
               // Actualizar syncedAr en TODOS los registros locales con el fechaLog del ID más alto del servidor
-              const allLocalVentas =
-                this.realm!.objects('Venta');
+              const allLocalVentas = this.realm!.objects('Venta');
               for (const localVenta of allLocalVentas) {
                 (localVenta as any).syncedAr = syncedArValue;
               }
@@ -578,99 +697,164 @@ class FullSyncService {
         },
       ];
 
-    const totalTasks = tasks.length;
-    let currentTask = 0;
+      const totalTasks = tasks.length;
+      let currentTask = 0;
+      let tablasExitosas = 0;
+      let tablasConError = 0;
+      let totalRegistros = 0;
 
-    for (const task of tasks) {
-      currentTask++;
-      const fechaInicioTask = new Date();
-      notify(
-        task.name,
-        currentTask,
-        totalTasks,
-        'syncing',
-        `Sincronizando ${task.name}...`,
-      );
+      for (const task of tasks) {
+        currentTask++;
+        const fechaInicioTask = new Date();
+        notify(
+          task.name,
+          currentTask,
+          totalTasks,
+          'syncing',
+          `Sincronizando ${task.name}...`,
+        );
 
-      try {
-        const result = await task.run();
-        const fechaFinalTask = new Date();
+        // Registrar inicio de bitácora para esta tabla
+        const bitacoraTablaId = await bitacoraService.registrarInicioSync(
+          task.name,
+          'incremental',
+          '', // endpoint se actualiza después
+          syncLogId,
+        );
 
-        // Guardar bitácora por tabla
-        this.realm!.write(() => {
-          this.realm!.create('SyncTableLog', {
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            syncLogId,
-            tabla: result.tabla,
-            fechaInicio: fechaInicioTask,
-            fechaFinal: fechaFinalTask,
+        try {
+          const result = await task.run();
+          const fechaFinalTask = new Date();
+
+          // Guardar en SyncTableLog (log local existente)
+          this.realm!.write(() => {
+            this.realm!.create('SyncTableLog', {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              syncLogId,
+              tabla: result.tabla,
+              fechaInicio: fechaInicioTask,
+              fechaFinal: fechaFinalTask,
+              exitoso: true,
+              razon: null,
+              registrosLeidos: result.registrosLeidos,
+              registrosGuardados: result.registrosGuardados,
+              registrosActualizados: result.registrosActualizados,
+              duracionMs: fechaFinalTask.getTime() - fechaInicioTask.getTime(),
+              endpoint: result.endpoint,
+              detalles: null,
+            });
+          });
+
+          // ========================================
+          // BITÁCORA: Registrar fin exitoso de esta tabla
+          // ========================================
+          await bitacoraService.registrarFinSync(bitacoraTablaId, {
             exitoso: true,
-            razon: null,
             registrosLeidos: result.registrosLeidos,
             registrosGuardados: result.registrosGuardados,
             registrosActualizados: result.registrosActualizados,
-            duracionMs: fechaFinalTask.getTime() - fechaInicioTask.getTime(),
-            endpoint: result.endpoint,
-            detalles: null,
+            detalles: { endpoint: result.endpoint },
           });
-        });
 
-        notify(
-          task.name,
-          currentTask,
-          totalTasks,
-          'success',
-          `${task.name} sincronizado`,
-        );
-      } catch (error: any) {
-        const msg = error?.message || 'Error desconocido';
-        console.error(
-          `[FullSyncService] Error incremental en ${task.name}:`,
-          msg,
-        );
-        errors.push(`${task.name}: ${msg}`);
-        notify(
-          task.name,
-          currentTask,
-          totalTasks,
-          'error',
-          `Error en ${task.name}: ${msg}`,
-        );
-      }
-    }
+          tablasExitosas++;
+          totalRegistros +=
+            (result.registrosGuardados || 0) +
+            (result.registrosActualizados || 0);
 
-    const fechaFinal = new Date();
+          notify(
+            task.name,
+            currentTask,
+            totalTasks,
+            'success',
+            `${task.name} sincronizado`,
+          );
+        } catch (error: any) {
+          const msg = error?.message || 'Error desconocido';
+          console.error(
+            `[FullSyncService] Error incremental en ${task.name}:`,
+            msg,
+          );
+          errors.push(`${task.name}: ${msg}`);
 
-    // Actualizar SyncLog
-    this.realm.write(() => {
-      const log: any = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
-      if (log) {
-        log.fechaFinal = fechaFinal;
-        log.exitoso = errors.length === 0;
-        log.totalRegistros = undefined;
-        log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
-        if (errors.length > 0) {
-          log.razon = errors.join('; ');
+          // ========================================
+          // BITÁCORA: Registrar error de esta tabla
+          // ========================================
+          await bitacoraService.registrarFinSync(bitacoraTablaId, {
+            exitoso: false,
+            error: error instanceof Error ? error : new Error(msg),
+          });
+
+          tablasConError++;
+
+          notify(
+            task.name,
+            currentTask,
+            totalTasks,
+            'error',
+            `Error en ${task.name}: ${msg}`,
+          );
         }
       }
-    });
 
-    const success = errors.length === 0;
-    // console.log(
-    //   `[FullSyncService] Sincronización incremental completada. Éxito: ${success}, Errores: ${errors.length}`,
-    // );
+      const fechaFinal = new Date();
 
-    return {
-      success,
-      error: success ? undefined : errors.join('; '),
-    };
+      // Actualizar SyncLog
+      this.realm.write(() => {
+        const log: any = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+        if (log) {
+          log.fechaFinal = fechaFinal;
+          log.exitoso = errors.length === 0;
+          log.totalRegistros = undefined;
+          log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+          if (errors.length > 0) {
+            log.razon = errors.join('; ');
+          }
+        }
+      });
+
+      const success = errors.length === 0;
+
+      // ========================================
+      // BITÁCORA: Registrar fin de sesión incremental
+      // ========================================
+      await bitacoraService.registrarFinSesion(sesionBitacoraId, {
+        totalTablas: totalTasks,
+        tablasExitosas,
+        tablasConError,
+        totalRegistros,
+        errores: errors.length > 0 ? errors : undefined,
+      });
+      console.log(
+        `[FullSyncService] 📝 Sesión de bitácora finalizada: ${sesionBitacoraId}`,
+      );
+
+      // ========================================
+      // ARRASTRE DE BITÁCORAS (últimos 3 días)
+      // ========================================
+      try {
+        console.log('[FullSyncService] 📤 Iniciando arrastre de bitácoras...');
+        await this.enviarBitacorasPendientes();
+      } catch (bitacoraError) {
+        // No hacer fallar la sincronización por errores de bitácora
+        console.warn(
+          '[FullSyncService] ⚠️ Error en arrastre de bitácoras (no crítico):',
+          bitacoraError,
+        );
+      }
+
+      return {
+        success,
+        error: success ? undefined : errors.join('; '),
+      };
     } catch (error: any) {
       console.error('[FullSyncService] Error crítico en incremental:', error);
       return { success: false, error: error?.message || 'Error crítico' };
     } finally {
       // MUTEX: Liberar el lock siempre
       this.isSyncing = false;
-      console.log('[FullSyncService] 🔓 Sincronización incremental finalizada (mutex liberado)');
+      console.log(
+        '[FullSyncService] 🔓 Sincronización incremental finalizada (mutex liberado)',
+      );
     }
   }
 
@@ -684,12 +868,16 @@ class FullSyncService {
   ): Promise<{ success: boolean; error?: string }> {
     // MUTEX: Prevenir sincronizaciones concurrentes
     if (this.isSyncing) {
-      console.warn('[FullSyncService] Ya hay una sincronización en curso - IGNORANDO');
+      console.warn(
+        '[FullSyncService] Ya hay una sincronización en curso - IGNORANDO',
+      );
       return { success: false, error: 'Sincronización ya en curso' };
     }
 
     this.isSyncing = true;
-    console.log('[FullSyncService] 🔒 Sincronización iniciada (mutex activado)');
+    console.log(
+      '[FullSyncService] 🔒 Sincronización iniciada (mutex activado)',
+    );
 
     try {
       if (!this.isInitialized) {
@@ -700,104 +888,106 @@ class FullSyncService {
         throw new Error('Realm no inicializado');
       }
 
-    // Crear SyncLog principal
-    const syncLogId = `${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-    const fechaInicio = new Date();
+      // Crear SyncLog principal
+      const syncLogId = `${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      const fechaInicio = new Date();
 
-    try {
-      // Guardar log inicial
-      this.realm.write(() => {
-        this.realm!.create('SyncLog', {
-          id: syncLogId,
-          fechaInicio,
-          exitoso: true, // Se actualizará si hay errores
-          tipo: 'automatica',
-        });
-      });
-
-      // console.log(
-      //   `[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`,
-      // );
-
-      // Crear orquestador y ejecutar todas las tareas
-      const orchestrator = new SyncOrchestrator(
-        this.realm,
-        syncLogId,
-        sucursal,
-        onProgress,
-      );
-
-      const result = await orchestrator.executeAll();
-
-      // Actualizar log final
-      const fechaFinal = new Date();
-      const totalRegistros = Array.from(result.results.values()).reduce(
-        (sum, r) =>
-          sum + (r.registrosGuardados || 0) + (r.registrosActualizados || 0),
-        0,
-      );
-
-      this.realm.write(() => {
-        const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
-        if (log) {
-          log.fechaFinal = fechaFinal;
-          log.exitoso = result.success;
-          log.totalRegistros = totalRegistros;
-          log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
-          if (!result.success) {
-            log.razon = result.errors.join('; ');
-          }
-        }
-      });
-
-      // console.log(
-      //   `[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`,
-      // );
-
-      return {
-        success: result.success,
-        error: result.success ? undefined : result.errors.join('; '),
-      };
-    } catch (error: any) {
-      console.error('❌ Error durante la sincronización completa:', error);
-
-      // Actualizar log con error crítico
-      const fechaFinal = new Date();
       try {
+        // Guardar log inicial
+        this.realm.write(() => {
+          this.realm!.create('SyncLog', {
+            id: syncLogId,
+            fechaInicio,
+            exitoso: true, // Se actualizará si hay errores
+            tipo: 'automatica',
+          });
+        });
+
+        // console.log(
+        //   `[FullSyncService] Iniciando sincronización completa (ID: ${syncLogId})`,
+        // );
+
+        // Crear orquestador y ejecutar todas las tareas
+        const orchestrator = new SyncOrchestrator(
+          this.realm,
+          syncLogId,
+          sucursal,
+          onProgress,
+        );
+
+        const result = await orchestrator.executeAll();
+
+        // Actualizar log final
+        const fechaFinal = new Date();
+        const totalRegistros = Array.from(result.results.values()).reduce(
+          (sum, r) =>
+            sum + (r.registrosGuardados || 0) + (r.registrosActualizados || 0),
+          0,
+        );
+
         this.realm.write(() => {
           const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
           if (log) {
             log.fechaFinal = fechaFinal;
-            log.exitoso = false;
-            log.razon = error?.message || 'Error desconocido';
+            log.exitoso = result.success;
+            log.totalRegistros = totalRegistros;
             log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+            if (!result.success) {
+              log.razon = result.errors.join('; ');
+            }
           }
         });
-      } catch (logError) {
-        console.error('[FullSyncService] Error al actualizar log:', logError);
-      }
 
-      if (onProgress) {
-        onProgress({
-          current: 0,
-          total: 0,
-          entity: 'Error',
-          status: 'error',
-          message: error?.message || 'Error durante la sincronización',
-        });
-      }
+        // console.log(
+        //   `[FullSyncService] Sincronización completada. Éxito: ${result.success}, Total registros: ${totalRegistros}`,
+        // );
 
-      return { success: false, error: error?.message };
-    }
+        return {
+          success: result.success,
+          error: result.success ? undefined : result.errors.join('; '),
+        };
+      } catch (error: any) {
+        console.error('❌ Error durante la sincronización completa:', error);
+
+        // Actualizar log con error crítico
+        const fechaFinal = new Date();
+        try {
+          this.realm.write(() => {
+            const log = this.realm!.objectForPrimaryKey('SyncLog', syncLogId);
+            if (log) {
+              log.fechaFinal = fechaFinal;
+              log.exitoso = false;
+              log.razon = error?.message || 'Error desconocido';
+              log.duracionMs = fechaFinal.getTime() - fechaInicio.getTime();
+            }
+          });
+        } catch (logError) {
+          console.error('[FullSyncService] Error al actualizar log:', logError);
+        }
+
+        if (onProgress) {
+          onProgress({
+            current: 0,
+            total: 0,
+            entity: 'Error',
+            status: 'error',
+            message: error?.message || 'Error durante la sincronización',
+          });
+        }
+
+        return { success: false, error: error?.message };
+      }
     } catch (error: any) {
       console.error('[FullSyncService] Error crítico:', error);
       return { success: false, error: error?.message || 'Error crítico' };
     } finally {
       // MUTEX: Liberar el lock siempre
       this.isSyncing = false;
-      console.log('[FullSyncService] 🔓 Sincronización finalizada (mutex liberado)');
+      console.log(
+        '[FullSyncService] 🔓 Sincronización finalizada (mutex liberado)',
+      );
     }
   }
 
@@ -1218,7 +1408,13 @@ class FullSyncService {
           sucursal: m.sucursal ?? null,
           sucursalSegmento: m.sucursalSegmento ?? null,
           saldo: m.saldo,
-          fecha: m.fecha ?? new Date(),
+          // Usar fecha directamente sin ajuste (dispositivo ya en hora local MX)
+          fecha:
+            m.fecha instanceof Date
+              ? m.fecha
+              : m.fecha
+              ? new Date(m.fecha)
+              : new Date(),
           idSegmento: m.idSegmento ?? null,
           noVenta: m.noVenta ?? null,
           tipoPago: m.tipoPago ?? null,
@@ -1335,7 +1531,7 @@ class FullSyncService {
     const end = new Date(date);
     end.setHours(23, 59, 59, 999);
 
-    let query = 'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and noVenta>0';
+    let query = 'fecha >= $0 AND fecha <= $1 AND tipoPago == 1 and noVenta>=0';
     const args: any[] = [start, end];
 
     if (sucursal !== undefined) {
@@ -1420,6 +1616,7 @@ class FullSyncService {
   /**
    * Envía las ventas locales pendientes al servidor.
    * Solo envía ventas con id >= LOCAL_SALE_ID_THRESHOLD y noVenta === 0.
+   * IMPORTANTE: Solo envía ventas de los últimos 3 días para evitar duplicados.
    * Se puede usar desde SalesScreen o desde la sincronización periódica.
    */
   async sendPendingVentasToServer(
@@ -1428,33 +1625,70 @@ class FullSyncService {
   ): Promise<{ success: boolean; sent: number; error?: string }> {
     const LOCAL_SALE_ID_THRESHOLD = 1700000000;
 
+    // Calcular fecha límite: últimos 3 días
+    const tresDiasAtras = new Date();
+    tresDiasAtras.setDate(tresDiasAtras.getDate() - 3);
+    tresDiasAtras.setHours(0, 0, 0, 0);
+
+    // ========================================
+    // BITÁCORA: Registrar inicio de arrastre de ventas
+    // ========================================
+    const url = `${this.apiBaseUrl}/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
+    const bitacoraId = await bitacoraService.registrarInicioSync(
+      'ArrastreVentas',
+      'incremental',
+      url,
+    );
+
     try {
       if (!this.isInitialized || !this.realm) {
         await this.initialize();
       }
       if (!this.realm) {
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: false,
+          error: new Error('Realm no inicializado'),
+        });
         return { success: false, sent: 0, error: 'Realm no inicializado' };
       }
 
       const ventasRealm = this.getVentas();
 
-      // Solo enviar ventas locales (id >= threshold) y sin número de venta asignado
-      const ventasLocales = ventasRealm.filter(
-        (venta: any) =>
-          venta.noVenta === 0 && venta.id >= LOCAL_SALE_ID_THRESHOLD,
-      );
+      // Solo enviar ventas locales de los últimos 3 días:
+      // - id >= threshold (ventas locales)
+      // - noVenta === 0 (sin número de venta asignado)
+      // - fecha >= tresDiasAtras (solo últimos 3 días)
+      const ventasLocales = ventasRealm.filter((venta: any) => {
+        const fechaVenta = venta.fecha ? new Date(venta.fecha) : null;
+        const esDentroDeRango = fechaVenta
+          ? fechaVenta >= tresDiasAtras
+          : false;
 
-      console.log('[FullSyncService] Filtering local sales', {
+        return (
+          venta.noVenta === 0 &&
+          venta.id >= LOCAL_SALE_ID_THRESHOLD &&
+          esDentroDeRango
+        );
+      });
+
+      console.log('[FullSyncService] 📤 Arrastre ventas (últimos 3 días)', {
         totalVentas: ventasRealm.length,
         localVentas: ventasLocales.length,
         threshold: LOCAL_SALE_ID_THRESHOLD,
+        fechaLimite: tresDiasAtras.toISOString(),
       });
 
       if (ventasLocales.length === 0) {
-        console.log('[FullSyncService] No pending ventas to send');
+        console.log('[FullSyncService] No hay ventas pendientes para enviar');
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: true,
+          registrosLeidos: 0,
+          registrosGuardados: 0,
+          detalles: { mensaje: 'Sin ventas pendientes' },
+        });
         return { success: true, sent: 0 };
       }
-console.log(ventasLocales)
+
       const payload = ventasLocales.map((venta: any) => {
         const cliente = venta.cveCliente
           ? this.getClienteFullById(venta.cveCliente)
@@ -1476,18 +1710,11 @@ console.log(ventasLocales)
         };
       });
 
-      console.log('[FullSyncService] Payload to send:', payload);
-
-      const url = `${
-        this.apiBaseUrl
-      }/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${encodeURIComponent(
-        String(sucursal),
-      )}&idUsuario=${encodeURIComponent(String(idUsuario))}`;
-
-      console.log('[FullSyncService] Sending ventas arrastre', {
-        url,
-        rows: payload.length,
-      });
+      console.log(
+        '[FullSyncService] 📦 Payload ventas:',
+        payload.length,
+        'registros',
+      );
 
       const response = await fetch(url, {
         method: 'POST',
@@ -1501,10 +1728,16 @@ console.log(ventasLocales)
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
         console.error(
-          '[FullSyncService] Error sending ventas arrastre',
+          '[FullSyncService] ❌ Error arrastre ventas',
           response.status,
           errorText,
         );
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: false,
+          registrosLeidos: ventasLocales.length,
+          error: new Error(`HTTP ${response.status}: ${errorText}`),
+          detalles: { endpoint: url },
+        });
         return {
           success: false,
           sent: 0,
@@ -1513,14 +1746,183 @@ console.log(ventasLocales)
       }
 
       console.log(
-        '[FullSyncService] Ventas arrastre sent successfully',
-        response.status,
+        `[FullSyncService] ✅ Arrastre ventas exitoso: ${payload.length} registros`,
       );
+
+      // ========================================
+      // BITÁCORA: Registrar fin exitoso
+      // ========================================
+      await bitacoraService.registrarFinSync(bitacoraId, {
+        exitoso: true,
+        registrosLeidos: ventasLocales.length,
+        registrosGuardados: payload.length,
+        detalles: { endpoint: url },
+      });
+
       return { success: true, sent: payload.length };
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : 'Error desconocido';
-      console.error('[FullSyncService] Error sending ventas arrastre', error);
+      console.error('[FullSyncService] ❌ Error arrastre ventas:', error);
+
+      await bitacoraService.registrarFinSync(bitacoraId, {
+        exitoso: false,
+        error: error instanceof Error ? error : new Error(errorMsg),
+        detalles: { endpoint: url },
+      });
+
+      return { success: false, sent: 0, error: errorMsg };
+    }
+  }
+
+  /**
+   * Envía la cobranza local pendiente al servidor.
+   * Solo envía registros de cartera con id >= 170000000 (cobranza local).
+   * Se puede usar desde BillingScreen o desde la sincronización periódica.
+   */
+  async sendPendingCobranzaToServer(
+    sucursal: number,
+    idUsuario: number,
+  ): Promise<{ success: boolean; sent: number; error?: string }> {
+    const LOCAL_COBRANZA_ID_THRESHOLD = 170000000;
+
+    // ========================================
+    // BITÁCORA: Registrar inicio de arrastre de cobranza
+    // ========================================
+    const url = `${this.apiBaseUrl}/api/MovilesVentas/sp_MovilesCobranzaArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
+    const bitacoraId = await bitacoraService.registrarInicioSync(
+      'ArrastreCobranza',
+      'incremental',
+      url,
+    );
+
+    try {
+      if (!this.isInitialized || !this.realm) {
+        await this.initialize();
+      }
+      if (!this.realm) {
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: false,
+          error: new Error('Realm no inicializado'),
+        });
+        return { success: false, sent: 0, error: 'Realm no inicializado' };
+      }
+
+      // Obtener cobranza local (id >= threshold)
+      const todaCartera = this.getCartera(999999) || [];
+      const cobranzaLocal = todaCartera.filter(
+        (row: any) => row.id >= LOCAL_COBRANZA_ID_THRESHOLD,
+      );
+
+      console.log('[FullSyncService] 📤 Arrastre cobranza', {
+        totalCartera: todaCartera.length,
+        cobranzaLocal: cobranzaLocal.length,
+        threshold: LOCAL_COBRANZA_ID_THRESHOLD,
+      });
+
+      if (cobranzaLocal.length === 0) {
+        console.log('[FullSyncService] No hay cobranza pendiente para enviar');
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: true,
+          registrosLeidos: 0,
+          registrosGuardados: 0,
+          detalles: { mensaje: 'Sin cobranza pendiente' },
+        });
+        return { success: true, sent: 0 };
+      }
+
+      // Serializar fecha: formatear como string 'YYYY-MM-DD HH:mm:ss.SSS' en hora MX sin conversión a UTC
+      const formatMexicoDate = (
+        date: Date | string | null | undefined,
+      ): string => {
+        const d =
+          date instanceof Date ? date : date ? new Date(date) : new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        const ms = String(d.getMilliseconds()).padStart(3, '0');
+        return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
+      };
+
+      const payload = cobranzaLocal.map((m: any) => ({
+        idCliente: m.idCliente,
+        nombreCliente: m.nombreCliente,
+        sucursal: m.sucursal,
+        sucursalSegmento: m.sucursalSegmento,
+        saldo: m.saldo,
+        fecha: formatMexicoDate(m.fecha),
+        idSegmento: m.idSegmento,
+        noVenta: m.noVenta,
+        cobrado: m.cobrado ?? 1,
+        id_movil: m.id,
+        tipoPago: m.tipoPago ?? 0,
+        idUsuario: idUsuario,
+      }));
+
+      console.log(
+        '[FullSyncService] 📦 Payload cobranza:',
+        payload.length,
+        'registros',
+      );
+      console.log({ payload });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.error(
+          '[FullSyncService] ❌ Error arrastre cobranza',
+          response.status,
+          errorText,
+        );
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: false,
+          registrosLeidos: cobranzaLocal.length,
+          error: new Error(`HTTP ${response.status}: ${errorText}`),
+          detalles: { endpoint: url },
+        });
+        return {
+          success: false,
+          sent: 0,
+          error: `HTTP ${response.status}: ${errorText}`,
+        };
+      }
+
+      console.log(
+        `[FullSyncService] ✅ Arrastre cobranza exitoso: ${payload.length} registros`,
+      );
+
+      // ========================================
+      // BITÁCORA: Registrar fin exitoso
+      // ========================================
+      await bitacoraService.registrarFinSync(bitacoraId, {
+        exitoso: true,
+        registrosLeidos: cobranzaLocal.length,
+        registrosGuardados: payload.length,
+        detalles: { endpoint: url },
+      });
+
+      return { success: true, sent: payload.length };
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : 'Error desconocido';
+      console.error('[FullSyncService] ❌ Error arrastre cobranza:', error);
+
+      await bitacoraService.registrarFinSync(bitacoraId, {
+        exitoso: false,
+        error: error instanceof Error ? error : new Error(errorMsg),
+        detalles: { endpoint: url },
+      });
+
       return { success: false, sent: 0, error: errorMsg };
     }
   }
@@ -1691,14 +2093,14 @@ console.log(ventasLocales)
         schema: [SyncLogSchema],
         schemaVersion: 1,
       });
-      
+
       realm.write(() => {
         const log = realm.objectForPrimaryKey('SyncLog', id);
         if (log) {
           realm.delete(log);
         }
       });
-      
+
       realm.close();
       return true;
     } catch (error) {
@@ -1835,12 +2237,12 @@ console.log(ventasLocales)
         schema: [SyncLogSchema],
         schemaVersion: 1,
       });
-      
+
       realm.write(() => {
         const logs = realm.objects('SyncLog');
         realm.delete(logs);
       });
-      
+
       realm.close();
       return true;
     } catch (error) {

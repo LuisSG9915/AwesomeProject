@@ -99,7 +99,9 @@ class BackgroundSyncService {
 
     // NO ejecutar inmediatamente - esperar el intervalo completo
     // Esto evita colisión con la sincronización inicial del login
-    console.log('[BackgroundSync] Primera sincronización automática en 1 minuto');
+    console.log(
+      '[BackgroundSync] Primera sincronización automática en 1 minuto',
+    );
   }
 
   /**
@@ -286,12 +288,28 @@ class BackgroundSyncService {
       );
       if (ventasResult.success && ventasResult.sent > 0) {
         console.log(
-          `[BackgroundSync] Ventas pendientes enviadas: ${ventasResult.sent}`,
+          `[BackgroundSync] ✅ Ventas pendientes enviadas: ${ventasResult.sent}`,
         );
       } else if (!ventasResult.success) {
         console.error(
-          '[BackgroundSync] Error enviando ventas pendientes:',
+          '[BackgroundSync] ⚠️ Error enviando ventas pendientes:',
           ventasResult.error,
+        );
+      }
+
+      // SEGUNDO: Enviar cobranza pendiente al servidor (arrastre)
+      const cobranzaResult = await FullSyncService.sendPendingCobranzaToServer(
+        sucursal,
+        idUsuario,
+      );
+      if (cobranzaResult.success && cobranzaResult.sent > 0) {
+        console.log(
+          `[BackgroundSync] ✅ Cobranza pendiente enviada: ${cobranzaResult.sent}`,
+        );
+      } else if (!cobranzaResult.success) {
+        console.error(
+          '[BackgroundSync] ⚠️ Error enviando cobranza pendiente:',
+          cobranzaResult.error,
         );
       }
 
@@ -307,6 +325,29 @@ class BackgroundSyncService {
         },
       );
 
+      // ARRASTRE DE BITÁCORAS: Enviar bitácoras de los últimos 3 días al servidor
+      try {
+        console.log('[BackgroundSync] 📤 Iniciando arrastre de bitácoras...');
+        const bitacoraResult =
+          await FullSyncService.enviarBitacorasPendientes();
+        if (bitacoraResult.success && bitacoraResult.enviadas > 0) {
+          console.log(
+            `[BackgroundSync] ✅ Bitácoras enviadas: ${bitacoraResult.enviadas}`,
+          );
+        } else if (!bitacoraResult.success) {
+          console.warn(
+            '[BackgroundSync] ⚠️ Error en arrastre de bitácoras (no crítico):',
+            bitacoraResult.error,
+          );
+        }
+      } catch (bitacoraError) {
+        // No hacer fallar la sincronización por errores de bitácora
+        console.warn(
+          '[BackgroundSync] ⚠️ Error en arrastre de bitácoras:',
+          bitacoraError,
+        );
+      }
+
       // Actualizar estado según resultado
       const now = new Date();
       const nextSync = new Date(now.getTime() + this.SYNC_INTERVAL_MS);
@@ -320,7 +361,9 @@ class BackgroundSyncService {
           errorMessage: null,
           syncCount: this.state.syncCount + 1,
         });
-        console.log('[BackgroundSync] Sincronización completada exitosamente');
+        console.log(
+          '[BackgroundSync] ✅ Sincronización completada exitosamente',
+        );
       } else {
         this.updateState({
           status: 'error',
@@ -330,7 +373,7 @@ class BackgroundSyncService {
           errorMessage: result.error || 'Error desconocido',
         });
         console.log(
-          '[BackgroundSync] Sincronización completada con errores:',
+          '[BackgroundSync] ⚠️ Sincronización completada con errores:',
           result.error,
         );
       }

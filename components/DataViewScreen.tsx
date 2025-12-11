@@ -310,6 +310,7 @@ export default function DataViewScreen() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>ID #{item.id}</Text>
             <Text style={styles.cardTitle}>Venta #{item.noVenta}</Text>
             <Text style={styles.cardSubtitle}>
               {item.fecha?.toLocaleDateString()}
@@ -469,33 +470,40 @@ export default function DataViewScreen() {
   );
 
   const renderCartera = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{item.nombreCliente}</Text>
-          <Text style={styles.cardPrice}>${item.saldo?.toFixed(2)}</Text>
+    <TouchableOpacity onPress={() => consoleRealm('ventas', item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{item.nombreCliente}</Text>
+            <Text style={styles.cardPrice}>${item.saldo?.toFixed(2)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => handleDelete(item.id, 'cartera')}
+            style={styles.deleteButton}
+          >
+            <Icon
+              name="delete"
+              type="material"
+              color={COLORS.error}
+              size={24}
+            />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => handleDelete(item.id, 'cartera')}
-          style={styles.deleteButton}
-        >
-          <Icon name="delete" type="material" color={COLORS.error} size={24} />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
-        <Text style={styles.cardText}>Sucursal: {item.sucursal}</Text>
-        <Text style={styles.cardText}>No. Venta: {item.noVenta}</Text>
-        <Text style={styles.cardText}>
-          Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
-        </Text>
-        {item.syncedAr && (
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
+          <Text style={styles.cardText}>Sucursal: {item.sucursal}</Text>
+          <Text style={styles.cardText}>No. Venta: {item.noVenta}</Text>
           <Text style={styles.cardText}>
-            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            Fecha: {item.fecha?.toLocaleDateString() || 'N/A'}
           </Text>
-        )}
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderUsuario = ({ item }: { item: any }) => (

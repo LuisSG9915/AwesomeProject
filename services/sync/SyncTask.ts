@@ -1,5 +1,6 @@
 import Realm from 'realm';
 import { SyncTableLogSchema } from '../RealmSchemas';
+import { bitacoraService } from '../BitacoraService';
 
 /**
  * Interfaz para el resultado de una sincronización individual
@@ -10,6 +11,7 @@ export interface SyncTaskResult {
   registrosLeidos?: number;
   registrosGuardados?: number;
   registrosActualizados?: number;
+  registrosEliminados?: number;
   detalles?: any;
 }
 
@@ -114,12 +116,21 @@ export abstract class SyncTask {
   }
 
   /**
-   * Ejecuta la tarea con retry logic y logging automático
+   * Ejecuta la tarea con retry logic, logging automático y bitácora completa
    */
   async executeWithLogging(): Promise<SyncTaskResult> {
     const fechaInicio = new Date();
-    console.log(
-      `[${this.getTableName()}] Iniciando sincronización con retry logic...`,
+    const tableName = this.getTableName();
+    const endpoint = this.getEndpoint();
+
+    console.log(`[${tableName}] Iniciando sincronización con retry logic...`);
+
+    // Registrar inicio en bitácora
+    const bitacoraId = await bitacoraService.registrarInicioSync(
+      tableName,
+      'completa',
+      endpoint,
+      this.syncLogId,
     );
 
     const maxRetries = 3;
@@ -131,7 +142,7 @@ export abstract class SyncTask {
         if (attempt > 1) {
           const delay = baseDelay * Math.pow(2, attempt - 2); // Exponential backoff
           console.log(
-            `[${this.getTableName()}] Reintentando sincronización (intento ${attempt}/${maxRetries}) después de ${delay}ms...`,
+            `[${tableName}] Reintentando sincronización (intento ${attempt}/${maxRetries}) después de ${delay}ms...`,
           );
           await new Promise<void>(resolve =>
             setTimeout(() => resolve(), delay),
@@ -141,9 +152,25 @@ export abstract class SyncTask {
         const result = await this.execute();
         const fechaFinal = new Date();
 
+        // Guardar log en tabla local (SyncTableLog)
         await this.saveTableLog(result, fechaInicio, fechaFinal);
 
-        console.log(`[${this.getTableName()}] Sincronización completada:`, {
+        // Registrar fin en bitácora con resultado exitoso
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: result.success,
+          registrosLeidos: result.registrosLeidos,
+          registrosGuardados: result.registrosGuardados,
+          registrosActualizados: result.registrosActualizados,
+          registrosEliminados: result.registrosEliminados,
+          error: result.success ? undefined : new Error(result.error),
+          detalles: {
+            ...result.detalles,
+            intentos: attempt,
+            duracionMs: fechaFinal.getTime() - fechaInicio.getTime(),
+          },
+        });
+
+        console.log(`[${tableName}] Sincronización completada:`, {
           success: result.success,
           duracionMs: fechaFinal.getTime() - fechaInicio.getTime(),
           intentos: attempt,
@@ -154,7 +181,7 @@ export abstract class SyncTask {
         lastError =
           error instanceof Error ? error : new Error('Error desconocido');
         console.error(
-          `[${this.getTableName()}] Intento ${attempt}/${maxRetries} fallido:`,
+          `[${tableName}] Intento ${attempt}/${maxRetries} fallido:`,
           lastError.message,
         );
 
@@ -171,10 +198,22 @@ export abstract class SyncTask {
             },
           };
 
+          // Guardar log en tabla local
           await this.saveTableLog(errorResult, fechaInicio, fechaFinal);
 
+          // Registrar error en bitácora con detalles completos
+          await bitacoraService.registrarFinSync(bitacoraId, {
+            exitoso: false,
+            error: lastError,
+            detalles: {
+              intentos: maxRetries,
+              esErrorDeRed: this.isNetworkError(lastError),
+              duracionMs: fechaFinal.getTime() - fechaInicio.getTime(),
+            },
+          });
+
           console.error(
-            `[${this.getTableName()}] Sincronización fallida después de ${maxRetries} intentos:`,
+            `[${tableName}] Sincronización fallida después de ${maxRetries} intentos:`,
             lastError,
           );
           return errorResult;

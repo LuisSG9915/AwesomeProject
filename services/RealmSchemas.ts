@@ -185,6 +185,94 @@ export const SyncTableLogSchema = {
   primaryKey: 'id',
 };
 
+// ============================================================================
+// SCHEMAS DE BITÁCORA COMPLETA
+// ============================================================================
+
+/**
+ * Schema para bitácora detallada de sincronización por tabla
+ * Incluye información completa: usuario, dispositivo, IP, errores detallados
+ */
+export const BitacoraSyncSchema = {
+  name: 'BitacoraSync',
+  properties: {
+    id: 'string',
+    idBitacoraMovil: 'string',
+    fechaInicio: 'date',
+    fechaFinal: 'date?',
+    duracionMs: 'int?',
+
+    // Usuario
+    idUsuario: 'int?',
+    nombreUsuario: 'string?',
+
+    // Dispositivo
+    ipDispositivo: 'string?',
+    nombreDispositivo: 'string?',
+    sistemaOperativo: 'string?',
+    versionApp: 'string?',
+
+    // Sincronización
+    sucursal: 'int',
+    tabla: 'string',
+    tipoSync: 'string', // 'completa', 'incremental', 'manual'
+    endpoint: 'string?',
+
+    // Estadísticas
+    registrosLeidos: 'int',
+    registrosGuardados: 'int',
+    registrosActualizados: 'int',
+    registrosEliminados: 'int',
+
+    // Estado y errores
+    exitoso: 'bool',
+    codigoError: 'string?',
+    descripcionError: 'string?',
+    stackTrace: 'string?',
+
+    // Metadata
+    detallesJSON: 'string?',
+    enviado: 'bool',
+    fechaEnvio: 'date?',
+  },
+  primaryKey: 'id',
+};
+
+/**
+ * Schema para bitácora de sesiones de sincronización
+ * Agrupa múltiples sincronizaciones de tablas en una sesión
+ */
+export const BitacoraSesionSchema = {
+  name: 'BitacoraSesion',
+  properties: {
+    id: 'string',
+    idSesionMovil: 'string',
+    fechaInicio: 'date',
+    fechaFinal: 'date?',
+    duracionTotalMs: 'int?',
+
+    idUsuario: 'int?',
+    nombreUsuario: 'string?',
+    ipDispositivo: 'string?',
+    nombreDispositivo: 'string?',
+
+    sucursal: 'int',
+    tipoSync: 'string',
+
+    totalTablas: 'int',
+    tablasExitosas: 'int',
+    tablasConError: 'int',
+    totalRegistros: 'int',
+
+    exitoso: 'bool',
+    resumenErrores: 'string?',
+
+    enviado: 'bool',
+    fechaEnvio: 'date?',
+  },
+  primaryKey: 'id',
+};
+
 export const ALL_SCHEMAS = [
   VentaSchema,
   UsuarioSchema,
@@ -196,4 +284,6 @@ export const ALL_SCHEMAS = [
   SyncStatusSchema,
   SyncLogSchema,
   SyncTableLogSchema,
+  BitacoraSyncSchema,
+  BitacoraSesionSchema,
 ];
