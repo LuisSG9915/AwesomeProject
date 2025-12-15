@@ -39,6 +39,24 @@ BEGIN
         versionApp NVARCHAR(50) NULL,
         -- Versión de la aplicación
 
+        -- Información de conectividad de red
+        tipoConexion NVARCHAR(50) NULL,
+        -- Tipo de conexión: 'wifi', 'cellular', 'ethernet', 'none', 'unknown'
+        tipoConexionDetallado NVARCHAR(50) NULL,
+        -- Detalle de conexión: '2g', '3g', '4g', '5g', 'wifi'
+        estadoConexion BIT NULL,
+        -- Estado de conexión: 1=conectado, 0=desconectado
+        intensidadSenal INT NULL,
+        -- Intensidad de señal: 0-100 (porcentaje)
+        velocidadDescargaMbps FLOAT NULL,
+        -- Velocidad estimada de descarga en Mbps
+        velocidadCargaMbps FLOAT NULL,
+        -- Velocidad estimada de carga en Mbps
+        latenciaMs INT NULL,
+        -- Latencia estimada en milisegundos
+        esConexionMetered BIT NULL,
+        -- Conexión con límite de datos: 1=sí, 0=no
+
         -- Información de la sincronización
         sucursal INT NOT NULL,
         -- Sucursal sincronizada
@@ -171,6 +189,14 @@ BEGIN
         nombreDispositivo,
         sistemaOperativo,
         versionApp,
+        tipoConexion,
+        tipoConexionDetallado,
+        estadoConexion,
+        intensidadSenal,
+        velocidadDescargaMbps,
+        velocidadCargaMbps,
+        latenciaMs,
+        esConexionMetered,
         sucursal,
         tabla,
         tipoSync,
@@ -197,6 +223,14 @@ BEGIN
         j.nombreDispositivo,
         j.sistemaOperativo,
         j.versionApp,
+        j.tipoConexion,
+        j.tipoConexionDetallado,
+        j.estadoConexion,
+        j.intensidadSenal,
+        j.velocidadDescargaMbps,
+        j.velocidadCargaMbps,
+        j.latenciaMs,
+        j.esConexionMetered,
         COALESCE(j.sucursal, @sucursal),
         j.tabla,
         j.tipoSync,
@@ -223,6 +257,14 @@ BEGIN
             nombreDispositivo   NVARCHAR(200)   '$.nombreDispositivo',
             sistemaOperativo    NVARCHAR(100)   '$.sistemaOperativo',
             versionApp          NVARCHAR(50)    '$.versionApp',
+            tipoConexion        NVARCHAR(50)    '$.tipoConexion',
+            tipoConexionDetallado NVARCHAR(50)  '$.tipoConexionDetallado',
+            estadoConexion      BIT             '$.estadoConexion',
+            intensidadSenal     INT             '$.intensidadSenal',
+            velocidadDescargaMbps FLOAT         '$.velocidadDescargaMbps',
+            velocidadCargaMbps  FLOAT           '$.velocidadCargaMbps',
+            latenciaMs          INT             '$.latenciaMs',
+            esConexionMetered   BIT             '$.esConexionMetered',
             sucursal            INT             '$.sucursal',
             tabla               NVARCHAR(100)   '$.tabla',
             tipoSync            NVARCHAR(50)    '$.tipoSync',

@@ -5,7 +5,17 @@
  */
 
 import { Platform, NativeModules } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
+
+let NetInfo: any = null;
+let netInfoAvailable = false;
+
+try {
+  NetInfo = require('@react-native-community/netinfo').default;
+  netInfoAvailable = true;
+} catch (error) {
+  console.warn('[DeviceInfoService] NetInfo no disponible, usando fallback');
+  netInfoAvailable = false;
+}
 
 interface DeviceInfo {
   ipDispositivo: string | null;
@@ -31,6 +41,13 @@ class DeviceInfoService {
 
     // Usar cache si está disponible y es reciente
     if (this.cachedIp && now - this.lastIpCheck < this.ipCacheDurationMs) {
+      return this.cachedIp;
+    }
+
+    // Si NetInfo no está disponible, retornar fallback
+    if (!netInfoAvailable || !NetInfo) {
+      this.cachedIp = 'netinfo-unavailable';
+      this.lastIpCheck = now;
       return this.cachedIp;
     }
 
@@ -88,7 +105,9 @@ class DeviceInfoService {
       return this.cachedIp;
     } catch (error) {
       console.error('[DeviceInfoService] Error obteniendo IP:', error);
-      return 'error-ip';
+      this.cachedIp = 'error-ip';
+      this.lastIpCheck = now;
+      return this.cachedIp;
     }
   }
 
@@ -198,6 +217,17 @@ class DeviceInfoService {
     isWifi: boolean;
     isInternetReachable: boolean | null;
   }> {
+    // Si NetInfo no está disponible, retornar valores por defecto
+    if (!netInfoAvailable || !NetInfo) {
+      console.warn('[DeviceInfoService] NetInfo no disponible, usando valores por defecto');
+      return {
+        isConnected: true, // Asumir conectado para no bloquear la app
+        type: 'unknown',
+        isWifi: false,
+        isInternetReachable: null,
+      };
+    }
+
     try {
       const netInfo = await NetInfo.fetch();
       return {
@@ -209,10 +239,10 @@ class DeviceInfoService {
     } catch (error) {
       console.error('[DeviceInfoService] Error obteniendo info de red:', error);
       return {
-        isConnected: false,
+        isConnected: true, // Asumir conectado en caso de error
         type: 'unknown',
         isWifi: false,
-        isInternetReachable: false,
+        isInternetReachable: null,
       };
     }
   }

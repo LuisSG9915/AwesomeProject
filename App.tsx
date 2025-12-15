@@ -5,8 +5,9 @@
  * @format
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   StatusBar,
   StyleSheet,
   useColorScheme,
@@ -27,8 +28,6 @@ import BillingScreen from './components/BillingScreen';
 import PrecorteScreen from './components/PrecorteScreen';
 import TraspasoRecepcionScreen from './components/TraspasoRecepcionScreen';
 import ReporteVentasScreen from './components/ReporteVentasScreen';
-import SyncService from './services/SyncService';
-import ClienteGruposScreen from './components/ClienteGruposScreen';
 // import SignalRService from './services/SignalRService';
 import DataViewScreen from './components/DataViewScreen';
 import PrinterSettingsScreen from './components/PrinterSettingsScreen';
@@ -38,8 +37,8 @@ import { SyncProgress } from './services/sync/SyncTask';
 import SyncProgressModal from './components/SyncProgressModal';
 import BluetoothPrinterService from './services/BluetoothPrinterService';
 import BackgroundSyncService from './services/BackgroundSyncService';
-import PersistentSyncService from './services/PersistentSyncService';
 import SyncStatusPanel from './components/SyncStatusPanel';
+import { bitacoraService } from './services/BitacoraService';
 import {
   APP_NAME,
   COLORS,
@@ -89,6 +88,8 @@ const Stack = createNativeStackNavigator();
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
+  const navigationRef = useRef<any>(null);
+  const routeNameRef = useRef<string | null>(null);
 
   useEffect(() => {
     // App initialization
@@ -98,6 +99,34 @@ function App() {
     BluetoothPrinterService.connectToSavedPrinter().catch(err => {
       console.log('No hay impresora guardada o no se pudo conectar:', err);
     });
+
+    (async () => {
+      try {
+        await FullSyncService.initialize();
+      } catch (error) {
+        console.warn('[App] No se pudo inicializar FullSyncService:', error);
+        return;
+      }
+
+      try {
+        await bitacoraService.iniciarSesionApp({
+          appState: AppState.currentState,
+          pantalla: null,
+        });
+      } catch (error) {
+        console.warn('[App] No se pudo iniciar sesión de app:', error);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      bitacoraService.registrarCambioAppState(nextState);
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   // useEffect(() => {
@@ -110,7 +139,31 @@ function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <NavigationContainer>
+      <NavigationContainer
+        ref={navigationRef}
+        onReady={() => {
+          const currentRouteName =
+            navigationRef.current?.getCurrentRoute?.()?.name || null;
+          routeNameRef.current = currentRouteName;
+          bitacoraService
+            .iniciarSesionApp({
+              appState: AppState.currentState,
+              pantalla: currentRouteName,
+            })
+            .catch(() => undefined);
+          if (currentRouteName) {
+            bitacoraService.registrarCambioPantalla(currentRouteName);
+          }
+        }}
+        onStateChange={() => {
+          const currentRouteName =
+            navigationRef.current?.getCurrentRoute?.()?.name || null;
+          if (currentRouteName && routeNameRef.current !== currentRouteName) {
+            bitacoraService.registrarCambioPantalla(currentRouteName);
+            routeNameRef.current = currentRouteName;
+          }
+        }}
+      >
         <Stack.Navigator
           initialRouteName="Login"
           screenOptions={{
@@ -214,7 +267,17 @@ function AppContent({ navigation }: { navigation: any }) {
         text: 'Cerrar Sesión',
         style: 'destructive',
         onPress: async () => {
+          try {
+            await bitacoraService.registrarEventoApp({
+              tipo: 'logout',
+              accion: 'logout',
+              descripcion: 'Cerrar sesión',
+            });
+          } catch (error) {
+            console.warn('[App] No se pudo registrar evento logout:', error);
+          }
           await AuthService.logout();
+          bitacoraService.clearUserContext();
           navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         },
       },
@@ -228,6 +291,16 @@ function AppContent({ navigation }: { navigation: any }) {
     setSyncProgress([]);
 
     try {
+      try {
+        await bitacoraService.registrarEventoApp({
+          tipo: 'sync_manual',
+          accion: 'start',
+          descripcion: 'Sincronización manual iniciada',
+        });
+      } catch (error) {
+        console.warn('[App] No se pudo registrar evento sync start:', error);
+      }
+
       const user = await AuthService.restoreSession();
       const sucursal = user?.sucursal_origen || user?.sucursal || 1;
 
@@ -241,11 +314,31 @@ function AppContent({ navigation }: { navigation: any }) {
         '✅ Sincronización Completa',
         'Todos los datos han sido actualizados correctamente.',
       );
+
+      try {
+        await bitacoraService.registrarEventoApp({
+          tipo: 'sync_manual',
+          accion: 'success',
+          descripcion: 'Sincronización manual exitosa',
+        });
+      } catch (error) {
+        console.warn('[App] No se pudo registrar evento sync success:', error);
+      }
     } catch (error: any) {
       Alert.alert(
         '❌ Error de Sincronización',
         error?.message || 'No se pudo completar la sincronización',
       );
+
+      try {
+        await bitacoraService.registrarEventoApp({
+          tipo: 'sync_manual',
+          accion: 'error',
+          descripcion: error?.message || 'Error en sincronización manual',
+        });
+      } catch (logError) {
+        console.warn('[App] No se pudo registrar evento sync error:', logError);
+      }
     } finally {
       setSyncing(false);
     }
@@ -361,7 +454,24 @@ function AppContent({ navigation }: { navigation: any }) {
             <TouchableOpacity
               key={item.id}
               style={[styles.menuCard, { backgroundColor: item.color }]}
-              onPress={() => navigation.navigate(item.screen)}
+              onPress={() => {
+                try {
+                  void bitacoraService.registrarEventoApp({
+                    tipo: 'navigate',
+                    accion: item.screen,
+                    descripcion: item.title,
+                    detalles: {
+                      menuItemId: item.id,
+                    },
+                  });
+                } catch (error) {
+                  console.warn(
+                    '[App] No se pudo registrar evento navigate:',
+                    error,
+                  );
+                }
+                navigation.navigate(item.screen);
+              }}
               activeOpacity={0.9}
             >
               <View style={styles.iconContainer}>

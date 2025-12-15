@@ -12,6 +12,7 @@ class FullSyncService {
   private isInitialized = false;
   private apiBaseUrl = 'https://cbinfo.no-ip.info:9011';
   private isSyncing = false; // MUTEX: Prevenir sincronizaciones concurrentes
+  private initializePromise: Promise<void> | null = null; // MUTEX: Prevenir inicializaciones concurrentes
 
   // Contexto de usuario para bitácora
   private currentUserId: number | null = null;
@@ -23,33 +24,43 @@ class FullSyncService {
       return;
     }
 
-    try {
-      this.realm = await Realm.open({
-        path: 'FullSyncDB',
-        schema: ALL_SCHEMAS,
-        schemaVersion: 7, // v7: BitacoraSync + BitacoraSesion para bitácora completa
-        onMigration: (oldRealm: Realm, newRealm: Realm) => {
-          const newCartera = newRealm.objects('Cartera');
-          for (let i = 0; i < newCartera.length; i++) {
-            const obj: any = newCartera[i];
-            if (typeof obj.cobrado === 'undefined') {
-              obj.cobrado = false;
-            }
-          }
-        },
-      });
-
-      // Inicializar BitacoraService con el realm
-      bitacoraService.setRealm(this.realm);
-
-      this.isInitialized = true;
-      console.log(
-        '✅ FullSyncService inicializado correctamente (v7 con BitacoraSync)',
-      );
-    } catch (error) {
-      console.error('❌ Error al inicializar FullSyncService:', error);
-      throw error;
+    if (this.initializePromise) {
+      return this.initializePromise;
     }
+
+    this.initializePromise = (async () => {
+      try {
+        this.realm = await Realm.open({
+          path: 'FullSyncDB',
+          schema: ALL_SCHEMAS,
+          schemaVersion: 8, // v8: BitacoraSync + BitacoraSesion + BitacoraAppSesion + BitacoraAppEvento
+          onMigration: (oldRealm: Realm, newRealm: Realm) => {
+            const newCartera = newRealm.objects('Cartera');
+            for (let i = 0; i < newCartera.length; i++) {
+              const obj: any = newCartera[i];
+              if (typeof obj.cobrado === 'undefined') {
+                obj.cobrado = false;
+              }
+            }
+          },
+        });
+
+        // Inicializar BitacoraService con el realm
+        bitacoraService.setRealm(this.realm);
+
+        this.isInitialized = true;
+        console.log(
+          '✅ FullSyncService inicializado correctamente (v8 con BitacoraSync + BitacoraApp)',
+        );
+      } catch (error) {
+        console.error('❌ Error al inicializar FullSyncService:', error);
+        throw error;
+      } finally {
+        this.initializePromise = null;
+      }
+    })();
+
+    return this.initializePromise;
   }
 
   /**
@@ -703,6 +714,20 @@ class FullSyncService {
       let tablasConError = 0;
       let totalRegistros = 0;
 
+      // Helper para ejecutar con timeout de 7 segundos
+      const runWithTimeout = async (
+        taskFn: () => Promise<IncrementalTaskResult>,
+        taskName: string,
+      ): Promise<IncrementalTaskResult> => {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Timeout de 7 segundos excedido para ${taskName}`));
+          }, 7000);
+        });
+
+        return Promise.race([taskFn(), timeoutPromise]);
+      };
+
       for (const task of tasks) {
         currentTask++;
         const fechaInicioTask = new Date();
@@ -723,7 +748,8 @@ class FullSyncService {
         );
 
         try {
-          const result = await task.run();
+          console.log(`[Incremental] Iniciando ${task.name} con timeout de 7 segundos...`);
+          const result = await runWithTimeout(task.run, task.name);
           const fechaFinalTask = new Date();
 
           // Guardar en SyncTableLog (log local existente)
@@ -770,11 +796,39 @@ class FullSyncService {
           );
         } catch (error: any) {
           const msg = error?.message || 'Error desconocido';
-          console.error(
-            `[FullSyncService] Error incremental en ${task.name}:`,
-            msg,
-          );
+          const isTimeout = msg.includes('Timeout de 7 segundos');
+          
+          if (isTimeout) {
+            console.warn(
+              `[FullSyncService] ⏱️ TIMEOUT en ${task.name} - Omitiendo y continuando con siguiente tabla`,
+            );
+          } else {
+            console.error(
+              `[FullSyncService] ❌ Error incremental en ${task.name}:`,
+              msg,
+            );
+          }
+          
           errors.push(`${task.name}: ${msg}`);
+
+          // Guardar log de error/timeout
+          this.realm!.write(() => {
+            this.realm!.create('SyncTableLog', {
+              id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              syncLogId,
+              tabla: task.name,
+              fechaInicio: fechaInicioTask,
+              fechaFinal: new Date(),
+              exitoso: false,
+              razon: isTimeout ? 'TIMEOUT_7_SEGUNDOS' : 'ERROR',
+              registrosLeidos: 0,
+              registrosGuardados: 0,
+              registrosActualizados: 0,
+              duracionMs: new Date().getTime() - fechaInicioTask.getTime(),
+              endpoint: '',
+              detalles: msg,
+            });
+          });
 
           // ========================================
           // BITÁCORA: Registrar error de esta tabla
@@ -791,8 +845,11 @@ class FullSyncService {
             currentTask,
             totalTasks,
             'error',
-            `Error en ${task.name}: ${msg}`,
+            isTimeout ? `Timeout en ${task.name}` : `Error en ${task.name}: ${msg}`,
           );
+          
+          // Continuar con el siguiente proceso sin detener la sincronización
+          console.log(`[FullSyncService] Continuando con siguiente tabla...`);
         }
       }
 

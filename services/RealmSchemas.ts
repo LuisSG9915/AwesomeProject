@@ -212,6 +212,16 @@ export const BitacoraSyncSchema = {
     sistemaOperativo: 'string?',
     versionApp: 'string?',
 
+    // Conectividad de red
+    tipoConexion: 'string?', // 'wifi', 'cellular', 'ethernet', 'bluetooth', 'wimax', 'vpn', 'none', 'unknown'
+    tipoConexionDetallado: 'string?', // '2g', '3g', '4g', '5g', 'wifi', etc.
+    estadoConexion: 'bool?', // true = conectado, false = desconectado
+    intensidadSenal: 'int?', // 0-100 (porcentaje de calidad de señal)
+    velocidadDescargaMbps: 'double?', // Velocidad estimada de descarga en Mbps
+    velocidadCargaMbps: 'double?', // Velocidad estimada de carga en Mbps
+    latenciaMs: 'int?', // Latencia en milisegundos
+    esConexionMetered: 'bool?', // true si es conexión con límite de datos
+
     // Sincronización
     sucursal: 'int',
     tabla: 'string',
@@ -273,6 +283,64 @@ export const BitacoraSesionSchema = {
   primaryKey: 'id',
 };
 
+export const BitacoraAppSesionSchema = {
+  name: 'BitacoraAppSesion',
+  properties: {
+    id: 'string',
+    idSesionAppMovil: 'string',
+    fechaInicio: 'date',
+    fechaFinal: 'date?',
+    duracionTotalMs: 'int?',
+
+    idUsuario: 'int?',
+    nombreUsuario: 'string?',
+    sucursal: 'int',
+
+    ipDispositivo: 'string?',
+    nombreDispositivo: 'string?',
+    sistemaOperativo: 'string?',
+    versionApp: 'string?',
+
+    tipoConexion: 'string?',
+    tipoConexionDetallado: 'string?',
+    estadoConexion: 'bool?',
+    intensidadSenal: 'int?',
+    esConexionMetered: 'bool?',
+
+    ultimoAppState: 'string?',
+    ultimaPantalla: 'string?',
+    razonCierre: 'string?',
+
+    enviado: 'bool',
+    fechaEnvio: 'date?',
+  },
+  primaryKey: 'id',
+};
+
+export const BitacoraAppEventoSchema = {
+  name: 'BitacoraAppEvento',
+  properties: {
+    id: 'string',
+    idEventoMovil: 'string',
+    sesionId: 'string',
+    fecha: 'date',
+
+    tipo: 'string',
+    pantalla: 'string?',
+    accion: 'string?',
+    descripcion: 'string?',
+    detallesJSON: 'string?',
+
+    idUsuario: 'int?',
+    nombreUsuario: 'string?',
+    sucursal: 'int',
+
+    enviado: 'bool',
+    fechaEnvio: 'date?',
+  },
+  primaryKey: 'id',
+};
+
 export const ALL_SCHEMAS = [
   VentaSchema,
   UsuarioSchema,
@@ -286,4 +354,6 @@ export const ALL_SCHEMAS = [
   SyncTableLogSchema,
   BitacoraSyncSchema,
   BitacoraSesionSchema,
+  BitacoraAppSesionSchema,
+  BitacoraAppEventoSchema,
 ];

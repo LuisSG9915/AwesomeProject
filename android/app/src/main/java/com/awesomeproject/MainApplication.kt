@@ -6,6 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.facebook.react.ReactPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -16,6 +17,18 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
+          val netInfoPackageClassName = "com.reactnativecommunity.netinfo.NetInfoPackage"
+          val hasNetInfoPackage = any { it.javaClass.name == netInfoPackageClassName }
+          if (!hasNetInfoPackage) {
+            try {
+              val netInfoPackage =
+                Class.forName(netInfoPackageClassName)
+                  .getDeclaredConstructor()
+                  .newInstance() as ReactPackage
+              add(netInfoPackage)
+            } catch (_: Throwable) {
+            }
+          }
         },
     )
   }

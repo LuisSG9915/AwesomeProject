@@ -64,6 +64,7 @@ export default function SalesScreen() {
   const [currentSucursal, setCurrentSucursal] = useState<number>(1);
   const [initializingPrinter, setInitializingPrinter] = useState(true);
   const [processingSale, setProcessingSale] = useState(false);
+  const [saleProcessLocked, setSaleProcessLocked] = useState(false);
   const [quantityInputs, setQuantityInputs] = useState<{
     [id: number]: string;
   }>({});
@@ -316,6 +317,48 @@ export default function SalesScreen() {
     }
   }, [selectedClient, currentSucursal]);
 
+  const syncPendingSalesInBackground = useCallback(async () => {
+    try {
+      const idUsuarioRaw =
+        (currentUser as any)?.idUsuario ?? (currentUser as any)?.id ?? 1;
+      const idUsuario = Number.isFinite(Number(idUsuarioRaw))
+        ? Number(idUsuarioRaw)
+        : 1;
+      const sucursal = currentSucursal || 0;
+
+      console.log(
+        '[Sales] Background sync: Iniciando sincronización de ventas pendientes',
+      );
+      const result = await FullSyncService.sendPendingVentasToServer(
+        sucursal,
+        idUsuario,
+      );
+
+      if (result.success) {
+        console.log(
+          '[Sales] Background sync: Ventas enviadas exitosamente',
+          result.sent,
+        );
+      } else {
+        console.error(
+          '[Sales] Background sync: Error al enviar ventas',
+          result.error,
+        );
+      }
+
+      // Sincronización incremental después del arrastre
+      console.log(
+        '[Sales] Background sync: Ejecutando sincronización incremental...',
+      );
+      await FullSyncService.syncIncremental();
+      console.log(
+        '[Sales] Background sync: Sincronización incremental completada',
+      );
+    } catch (error) {
+      console.error('[Sales] Background sync: Error en sincronización', error);
+    }
+  }, [currentUser, currentSucursal]);
+
   const processSale = async () => {
     const client = selectedClient;
 
@@ -332,6 +375,13 @@ export default function SalesScreen() {
       return;
     }
 
+    // Protección crítica contra múltiples clics
+    if (saleProcessLocked) {
+      console.log('[Sales] Venta ya en proceso, ignorando clic adicional');
+      return;
+    }
+
+    setSaleProcessLocked(true);
     setProcessingSale(true);
     try {
       const sucursal = currentSucursal || 0;
@@ -414,7 +464,7 @@ export default function SalesScreen() {
       );
       console.log('[Sales] Inventory updated successfully');
 
-      // Enviar ventas pendientes al servidor usando la función reutilizable
+      // Intentar arrastre con timeout estricto de 3 segundos
       try {
         const idUsuarioRaw =
           (currentUser as any)?.idUsuario ?? (currentUser as any)?.id ?? 1;
@@ -422,21 +472,45 @@ export default function SalesScreen() {
           ? Number(idUsuarioRaw)
           : 1;
 
-        const result = await FullSyncService.sendPendingVentasToServer(
+        console.log('[Sales] Intentando arrastre con timeout de 3 segundos...');
+
+        const arrastrePromise = FullSyncService.sendPendingVentasToServer(
           sucursal,
           idUsuario,
         );
 
+        const timeoutPromise = new Promise<{ success: false; error: string }>(
+          resolve => {
+            setTimeout(() => {
+              resolve({
+                success: false,
+                error: 'Timeout de 3 segundos excedido',
+              });
+            }, 3000);
+          },
+        );
+
+        const result = await Promise.race([arrastrePromise, timeoutPromise]);
+
         if (result.success) {
-          console.log('[Sales] Ventas arrastre sent successfully', result.sent);
+          console.log('[Sales] Arrastre completado exitosamente', result.sent);
         } else {
-          console.error('[Sales] Error sending ventas arrastre', result.error);
+          console.warn('[Sales] Arrastre omitido o falló:', result.error);
+          // Programar sincronización en background
+          setTimeout(() => {
+            console.log('[Sales] Ejecutando sincronización en background...');
+            syncPendingSalesInBackground();
+          }, 500);
         }
       } catch (arrastreError) {
-        console.error(
-          '[Sales] Error building/sending ventas arrastre',
-          arrastreError,
-        );
+        console.error('[Sales] Error en arrastre', arrastreError);
+        // Programar sincronización en background
+        setTimeout(() => {
+          console.log(
+            '[Sales] Ejecutando sincronización en background tras error...',
+          );
+          syncPendingSalesInBackground();
+        }, 500);
       }
 
       // Actualizar estado de impresora
@@ -458,19 +532,6 @@ export default function SalesScreen() {
           )}\nPago: ${metodoPago}`,
         );
       }
-      // Ejecutar sincronización incremental de ventas después de procesar la venta
-      try {
-        console.log('[Sales] Esperando 1 segundo antes de sincronizar...');
-        await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
-        console.log(
-          '[Sales] Ejecutando sincronización incremental de ventas...',
-        );
-        await FullSyncService.syncIncremental();
-        console.log('[Sales] Sincronización incremental completada');
-      } catch (syncError) {
-        console.error('[Sales] Error en sincronización incremental', syncError);
-        // No mostrar error al usuario, solo loguearlo
-      }
 
       // Limpiar formulario
       setCart([]);
@@ -481,6 +542,7 @@ export default function SalesScreen() {
       Alert.alert('Error', 'No se pudo procesar la venta');
     } finally {
       setProcessingSale(false);
+      setSaleProcessLocked(false);
     }
   };
 
@@ -664,7 +726,7 @@ export default function SalesScreen() {
             {processingSale ? (
               <View style={styles.loadingBtnRow}>
                 <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.primaryBtnText}> Procesando...</Text>
+                <Text style={styles.primaryBtnText}> Procesando venta...</Text>
               </View>
             ) : (
               <Text style={styles.primaryBtnText}>Procesar Venta</Text>

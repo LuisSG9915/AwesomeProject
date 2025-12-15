@@ -424,6 +424,11 @@ export default function BillingScreen() {
           <View style={styles.invoiceList}>
             {invoices
               .filter(inv => inv.saldo > 0)
+              .sort((a, b) => {
+                const dateA = new Date(a.fecha).getTime();
+                const dateB = new Date(b.fecha).getTime();
+                return dateB - dateA;
+              })
               .map((inv, idx) => (
                 <TouchableOpacity
                   key={inv.id}
