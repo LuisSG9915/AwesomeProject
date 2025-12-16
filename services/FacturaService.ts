@@ -189,14 +189,31 @@ class FacturaService {
 
       console.log('[FacturaService] Factura generada:', { serie, folio, uuid });
 
+      try {
+        await FullSyncService.setVentaFolioFactura(item.noVenta, item.sucursal, true);
+      } catch (realmError) {
+        console.warn(
+          '[FacturaService] No se pudo actualizar folioFactura en Realm:',
+          realmError,
+        );
+      }
+
+      let ticketWarning: string | null = null;
+
       // Obtener e imprimir ticket CFDI
-      await this.obtenerTicketCFDI(String(serie), String(folio));
+      try {
+        await this.obtenerTicketCFDI(String(serie), String(folio));
+      } catch (ticketError: any) {
+        ticketWarning =
+          ticketError?.message || 'No se pudo obtener/imprimir el ticket CFDI';
+        console.error('[FacturaService] Error al obtener ticket CFDI:', ticketError);
+      }
 
       Alert.alert(
         '✅ Factura Generada',
         `Serie: ${serie}\nFolio: ${folio}${
           uuid ? `\nUUID: ${uuid}` : ''
-        }\n\n¿Desea enviar por correo?`,
+        }${ticketWarning ? `\n\nAviso: ${ticketWarning}` : ''}\n\n¿Desea enviar por correo?`,
         [
           { text: 'No', style: 'cancel' },
           {

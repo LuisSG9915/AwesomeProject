@@ -86,23 +86,20 @@ export default function SyncStatusPanel({
         // Mostrar advertencia sobre batería
         Alert.alert(
           'Sincronización Automática',
-          'Esta función mantiene la sincronización activa en segundo plano cada 1 minuto.\n\n⚠️ Consumirá más batería.\n\nPara mejor funcionamiento, desactiva la optimización de batería para esta app en Configuración.',
+          'Esta función mantiene la sincronización activa cada 1.5 minutos (90 segundos).\n\n⚠️ Consumirá más batería.\n\nPara mejor funcionamiento, desactiva la optimización de batería para esta app en Configuración.',
           [
             {
               text: 'Configurar Batería',
-              onPress: () => {
-                requestBatteryOptimizationDisable();
-                // Iniciar servicio después de mostrar config
-                setTimeout(() => {
-                  BackgroundSyncService.start();
-                  setIsBackgroundSyncEnabled(true);
-                }, 500);
+              onPress: async () => {
+                await requestBatteryOptimizationDisable();
+                // El servicio ya está activo desde App.tsx, solo actualizar estado UI
+                setIsBackgroundSyncEnabled(true);
               },
             },
             {
               text: 'Activar Ahora',
               onPress: () => {
-                BackgroundSyncService.start();
+                // El servicio ya está activo desde App.tsx, solo actualizar estado UI
                 setIsBackgroundSyncEnabled(true);
               },
             },

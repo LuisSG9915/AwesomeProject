@@ -33,7 +33,7 @@ class FullSyncService {
         this.realm = await Realm.open({
           path: 'FullSyncDB',
           schema: ALL_SCHEMAS,
-          schemaVersion: 8, // v8: BitacoraSync + BitacoraSesion + BitacoraAppSesion + BitacoraAppEvento
+          schemaVersion: 9, // v9: BitacoraSync con appState, pantalla, origenSync
           onMigration: (oldRealm: Realm, newRealm: Realm) => {
             const newCartera = newRealm.objects('Cartera');
             for (let i = 0; i < newCartera.length; i++) {
@@ -745,6 +745,7 @@ class FullSyncService {
           'incremental',
           '', // endpoint se actualiza después
           syncLogId,
+          'background',
         );
 
         try {
@@ -1284,6 +1285,36 @@ class FullSyncService {
     });
   }
 
+  async setVentaFolioFactura(
+    noVenta: number,
+    sucursal: number,
+    folioFactura: boolean = true,
+  ): Promise<number> {
+    if (!this.isInitialized || !this.realm) {
+      await this.initialize();
+    }
+    if (!this.realm) return 0;
+
+    const ventas = this.realm
+      .objects('Venta')
+      .filtered('noVenta == $0 AND sucursal == $1', noVenta, sucursal);
+
+    if (!ventas || ventas.length === 0) return 0;
+
+    let updated = 0;
+    this.realm.write(() => {
+      for (let i = 0; i < ventas.length; i++) {
+        const v: any = (ventas as any)[i];
+        if (v && v.folioFactura !== folioFactura) {
+          v.folioFactura = folioFactura;
+          updated++;
+        }
+      }
+    });
+
+    return updated;
+  }
+
   getVentasByMovilId(idMovil: number): any[] {
     if (!this.isInitialized || !this.realm) return [];
     return Array.from(
@@ -1695,6 +1726,8 @@ class FullSyncService {
       'ArrastreVentas',
       'incremental',
       url,
+      undefined,
+      'auto',
     );
 
     try {
@@ -1851,6 +1884,8 @@ class FullSyncService {
       'ArrastreCobranza',
       'incremental',
       url,
+      undefined,
+      'auto',
     );
 
     try {

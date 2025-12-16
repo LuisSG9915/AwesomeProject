@@ -69,6 +69,14 @@ export default function PrinterSettingsScreen() {
   };
 
   const handleConnect = async (printer: PrinterDevice) => {
+    if (printer?.paired === false) {
+      Alert.alert(
+        'Vinculación requerida',
+        `Primero empareja ${printer.name} desde Ajustes > Bluetooth (PIN común: 0000 o 1234) y vuelve a intentar.`,
+      );
+      return;
+    }
+
     setConnecting(true);
 
     try {
@@ -285,7 +293,10 @@ export default function PrinterSettingsScreen() {
               keyExtractor={item => item.address}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={styles.printerItem}
+                  style={[
+                    styles.printerItem,
+                    item.paired === false && styles.printerItemUnpaired,
+                  ]}
                   onPress={() => handleConnect(item)}
                   disabled={connecting}
                 >
@@ -302,6 +313,26 @@ export default function PrinterSettingsScreen() {
                     <Text style={styles.printerItemAddress}>
                       {item.address}
                     </Text>
+                    <View style={styles.printerItemMetaRow}>
+                      <View
+                        style={[
+                          styles.pairingBadge,
+                          item.paired === true
+                            ? styles.pairingBadgePaired
+                            : item.paired === false
+                            ? styles.pairingBadgeUnpaired
+                            : styles.pairingBadgeUnknown,
+                        ]}
+                      >
+                        <Text style={styles.pairingBadgeText}>
+                          {item.paired === true
+                            ? 'Emparejada'
+                            : item.paired === false
+                            ? 'No vinculada'
+                            : 'Estado desconocido'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                   {currentPrinter?.address === item.address && isConnected && (
                     <View style={styles.connectedBadge}>
@@ -545,6 +576,11 @@ const styles = StyleSheet.create({
   printerItemContent: {
     flex: 1,
   },
+  printerItemMetaRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   printerItemName: {
     fontSize: 16,
     fontWeight: '600',
@@ -555,6 +591,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.muted,
     fontFamily: 'monospace',
+  },
+  printerItemUnpaired: {
+    borderColor: COLORS.warning,
+  },
+  pairingBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.round,
+  },
+  pairingBadgePaired: {
+    backgroundColor: COLORS.success,
+  },
+  pairingBadgeUnpaired: {
+    backgroundColor: COLORS.warning,
+  },
+  pairingBadgeUnknown: {
+    backgroundColor: COLORS.muted,
+  },
+  pairingBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   connectedBadge: {
     backgroundColor: COLORS.success,

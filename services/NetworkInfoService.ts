@@ -42,21 +42,10 @@ class NetworkInfoService {
    * Obtiene información completa de la red actual
    */
   async getNetworkInfo(): Promise<NetworkInfo> {
-    // Usar cache si está disponible y es reciente
-    const now = Date.now();
-    if (
-      this.cachedNetworkInfo &&
-      now - this.lastCacheTime < this.CACHE_DURATION_MS
-    ) {
-      return this.cachedNetworkInfo;
+    if (!netInfoAvailable || !NetInfo) {
+      const networkInfo = this.getDefaultNetworkInfo();
+      return networkInfo;
     }
- 
-     if (!netInfoAvailable || !NetInfo) {
-       const networkInfo = this.getDefaultNetworkInfo();
-       this.cachedNetworkInfo = networkInfo;
-       this.lastCacheTime = now;
-       return networkInfo;
-     }
 
     try {
       const state: NetInfoState = await NetInfo.fetch();
@@ -72,16 +61,21 @@ class NetworkInfoService {
         esConexionMetered: this.isMeteredConnection(state),
       };
 
-      // Actualizar cache
-      this.cachedNetworkInfo = networkInfo;
-      this.lastCacheTime = now;
+      console.log('[NetworkInfoService] Info de red capturada:', {
+        tipo: networkInfo.tipoConexion,
+        detallado: networkInfo.tipoConexionDetallado,
+        conectado: networkInfo.estadoConexion,
+        señal: networkInfo.intensidadSenal,
+        download: networkInfo.velocidadDescargaMbps,
+        upload: networkInfo.velocidadCargaMbps,
+        latencia: networkInfo.latenciaMs,
+        metered: networkInfo.esConexionMetered,
+      });
 
       return networkInfo;
     } catch (error) {
       console.error('[NetworkInfoService] Error obteniendo info de red:', error);
       const networkInfo = this.getDefaultNetworkInfo();
-      this.cachedNetworkInfo = networkInfo;
-      this.lastCacheTime = now;
       return networkInfo;
     }
   }
@@ -147,6 +141,8 @@ class NetworkInfoService {
     if (state.type === 'wifi' && state.details) {
       const details = state.details as any;
       
+      console.log('[NetworkInfoService] WiFi details:', JSON.stringify(details));
+      
       // Algunos dispositivos proporcionan strength (0-100)
       if (typeof details.strength === 'number') {
         return Math.max(0, Math.min(100, details.strength));
@@ -160,11 +156,23 @@ class NetworkInfoService {
         const percentage = Math.round(((rssi + 90) / 60) * 100);
         return Math.max(0, Math.min(100, percentage));
       }
+
+      // Algunos proporcionan linkSpeed (Mbps)
+      if (typeof details.linkSpeed === 'number') {
+        // Estimar señal basado en linkSpeed
+        // > 100 Mbps = 95%, 50-100 = 80%, 25-50 = 60%, < 25 = 40%
+        if (details.linkSpeed > 100) return 95;
+        if (details.linkSpeed > 50) return 80;
+        if (details.linkSpeed > 25) return 60;
+        return 40;
+      }
     }
 
     // Para cellular, estimar basado en la generación
     if (state.type === 'cellular' && state.details) {
       const details = state.details as any;
+      
+      console.log('[NetworkInfoService] Cellular details:', JSON.stringify(details));
       
       if (details.cellularGeneration === '5g') return 90;
       if (details.cellularGeneration === '4g') return 75;
@@ -172,8 +180,8 @@ class NetworkInfoService {
       if (details.cellularGeneration === '2g') return 25;
     }
 
-    // Si está conectado pero no tenemos info específica, asumir señal media
-    return state.isConnected ? 60 : null;
+    // Si está conectado pero no tenemos info específica, retornar null
+    return null;
   }
 
   /**
@@ -189,14 +197,27 @@ class NetworkInfoService {
       const details = state.details as any;
       
       // Algunos dispositivos proporcionan downlink (Mbps)
-      if (typeof details.downlink === 'number') {
+      if (typeof details.downlink === 'number' && details.downlink > 0) {
         return details.downlink;
+      }
+
+      // Para WiFi, usar linkSpeed si está disponible
+      if (state.type === 'wifi' && typeof details.linkSpeed === 'number' && details.linkSpeed > 0) {
+        return details.linkSpeed;
+      }
+
+      // effectiveType proporciona estimación (slow-2g, 2g, 3g, 4g)
+      if (details.effectiveType) {
+        const effectiveType = details.effectiveType.toLowerCase();
+        if (effectiveType.includes('4g')) return 20;
+        if (effectiveType.includes('3g')) return 2;
+        if (effectiveType.includes('2g')) return 0.3;
       }
     }
 
-    // Estimaciones basadas en tipo de conexión
+    // Estimaciones basadas en tipo de conexión (solo como último recurso)
     if (state.type === 'wifi') {
-      return 50; // WiFi típico: 50 Mbps
+      return null; // No estimamos, esperamos datos reales
     }
 
     if (state.type === 'cellular' && state.details) {
@@ -210,7 +231,7 @@ class NetworkInfoService {
     }
 
     if (state.type === 'ethernet') {
-      return 100; // Ethernet típico: 100 Mbps
+      return null; // No estimamos
     }
 
     return null;
@@ -229,16 +250,16 @@ class NetworkInfoService {
       const details = state.details as any;
       
       // Algunos dispositivos proporcionan uplink (Mbps)
-      if (typeof details.uplink === 'number') {
+      if (typeof details.uplink === 'number' && details.uplink > 0) {
         return details.uplink;
       }
     }
 
-    // Estimaciones basadas en tipo de conexión (típicamente menor que descarga)
+    // Estimaciones basadas en descarga (solo para cellular con generación conocida)
     const downloadSpeed = this.estimateDownloadSpeed(state);
-    if (downloadSpeed !== null) {
-      // Upload típicamente es 20-50% del download
-      return downloadSpeed * 0.3;
+    if (downloadSpeed !== null && state.type === 'cellular') {
+      // Upload típicamente es 20-40% del download para cellular
+      return Math.round(downloadSpeed * 0.3 * 10) / 10;
     }
 
     return null;
@@ -252,11 +273,7 @@ class NetworkInfoService {
       return null;
     }
 
-    // Estimaciones basadas en tipo de conexión
-    if (state.type === 'wifi') {
-      return 20; // WiFi típico: 20ms
-    }
-
+    // Estimaciones basadas en tipo de conexión (solo para cellular)
     if (state.type === 'cellular' && state.details) {
       const details = state.details as any;
       
@@ -267,11 +284,8 @@ class NetworkInfoService {
       if (details.cellularGeneration === '2g') return 300;
     }
 
-    if (state.type === 'ethernet') {
-      return 10; // Ethernet típico: 10ms
-    }
-
-    return 50; // Default: 50ms
+    // Para WiFi/Ethernet, retornar null ya que varía mucho según red
+    return null;
   }
 
   /**

@@ -8,6 +8,7 @@ import {
 export interface PrinterDevice {
   name: string;
   address: string;
+  paired?: boolean;
 }
 
 export interface PrinterStatus {
@@ -108,13 +109,29 @@ class BluetoothPrinterService {
       if (Array.isArray(parsed)) {
         deviceList = parsed;
       } else if (parsed && (parsed.found || parsed.paired)) {
-        deviceList = [...(parsed.found || []), ...(parsed.paired || [])];
+        const paired = Array.isArray(parsed.paired) ? parsed.paired : [];
+        const found = Array.isArray(parsed.found) ? parsed.found : [];
+
+        deviceList = [
+          ...paired.map((d: any) => ({ ...d, paired: true })),
+          ...found.map((d: any) => ({ ...d, paired: false })),
+        ];
       }
 
       // Asegurar dispositivos únicos por address
       const uniqueByAddress = new Map<string, any>();
       deviceList.forEach((device: any) => {
-        if (device?.address && !uniqueByAddress.has(device.address)) {
+        if (!device?.address) return;
+
+        const existing = uniqueByAddress.get(device.address);
+        if (!existing) {
+          uniqueByAddress.set(device.address, device);
+          return;
+        }
+
+        const existingPaired = existing?.paired === true;
+        const newPaired = device?.paired === true;
+        if (!existingPaired && newPaired) {
           uniqueByAddress.set(device.address, device);
         }
       });
@@ -138,7 +155,20 @@ class BluetoothPrinterService {
         .map((device: any) => ({
           name: device.name || 'Dispositivo sin nombre',
           address: device.address,
+          paired:
+            device?.paired === true
+              ? true
+              : device?.paired === false
+                ? false
+                : undefined,
         }));
+
+      printers.sort((a, b) => {
+        const aRank = a.paired === true ? 2 : a.paired === false ? 0 : 1;
+        const bRank = b.paired === true ? 2 : b.paired === false ? 0 : 1;
+        if (aRank !== bRank) return bRank - aRank;
+        return a.name.localeCompare(b.name);
+      });
 
       return printers;
     } catch (error) {
@@ -159,6 +189,16 @@ class BluetoothPrinterService {
       const isEnabled = await this.enableBluetooth();
       if (!isEnabled) {
         Alert.alert('Bluetooth', 'Por favor activa el Bluetooth');
+        return false;
+      }
+
+      if (printer?.paired === false) {
+        if (!options?.silent) {
+          Alert.alert(
+            'Vinculación requerida',
+            `Primero empareja ${printer.name} desde Ajustes > Bluetooth (PIN común: 0000 o 1234) y vuelve a intentar.`,
+          );
+        }
         return false;
       }
 

@@ -131,6 +131,7 @@ export abstract class SyncTask {
       'completa',
       endpoint,
       this.syncLogId,
+      'auto',
     );
 
     const maxRetries = 3;

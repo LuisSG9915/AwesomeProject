@@ -291,6 +291,8 @@ export default function BillingScreen() {
             'ArrastreCobranza',
             'manual',
             url,
+            undefined,
+            'manual',
           );
 
           console.log(

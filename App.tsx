@@ -250,11 +250,12 @@ function AppContent({ navigation }: { navigation: any }) {
     };
     loadUserInfo();
 
-    // Usar SOLO BackgroundSyncService para evitar conflictos
-    // El mutex en FullSyncService previene ejecuciones concurrentes
+    // Iniciar sincronización automática
+    // BackgroundFetch se configura una vez, pero el intervalo se reinicia cada vez
     BackgroundSyncService.start();
 
-    // Detener sincronización al desmontar (logout)
+    // Detener intervalo de primer plano al desmontar
+    // BackgroundFetch sigue funcionando para sincronización con app cerrada
     return () => {
       BackgroundSyncService.stop();
     };

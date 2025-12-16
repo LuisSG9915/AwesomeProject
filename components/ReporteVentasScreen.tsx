@@ -54,7 +54,7 @@ type GroupedSale = {
   tipoPago: 'Efectivo' | 'Credito' | 'Transferencia';
   sucursal?: number;
   cve_cliente?: number;
-  folioFactura?: string;
+  folioFactura?: boolean;
   facturacionMovil?: boolean;
   productos: Array<{
     nombreProducto: string;
@@ -293,7 +293,7 @@ export default function ReporteVentasScreen() {
             sucursal: venta.sucursal,
             cve_cliente: venta.cveCliente,
             productos: [],
-            folioFactura: venta.folioFactura,
+            folioFactura: !!venta.folioFactura,
             facturacionMovil: venta.facturacionMovil,
           });
         }
@@ -539,7 +539,23 @@ export default function ReporteVentasScreen() {
         const result = await FacturaService.getInstance().generarFactura(
           [facturaItem],
           fechaFactura,
-          () => loadVentas(),
+          () => {
+            setItems(prev =>
+              prev.map(i =>
+                i.no_venta === noVenta && i.sucursal === sucursal
+                  ? { ...i, folioFactura: true, timbrado: '1' }
+                  : i,
+              ),
+            );
+            setGroupedItems(prev =>
+              prev.map(g =>
+                g.no_venta === noVenta && g.sucursal === sucursal
+                  ? { ...g, folioFactura: true }
+                  : g,
+              ),
+            );
+            loadVentas();
+          },
         );
 
         // Si hubo error, ya se mostró en el servicio

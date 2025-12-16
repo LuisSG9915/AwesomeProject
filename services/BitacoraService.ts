@@ -44,6 +44,11 @@ export interface BitacoraEntry {
   latenciaMs: number | null;
   esConexionMetered: boolean | null;
 
+  // Estado de la aplicación
+  appState: string | null;
+  pantalla: string | null;
+  origenSync: string | null;
+
   // Sincronización
   sucursal: number;
   tabla: string;
@@ -128,6 +133,11 @@ export const BitacoraSyncSchema = {
     latenciaMs: 'int?',
     esConexionMetered: 'bool?',
 
+    // Estado de la aplicación
+    appState: 'string?',
+    pantalla: 'string?',
+    origenSync: 'string?',
+
     // Sincronización
     sucursal: 'int',
     tabla: 'string',
@@ -204,6 +214,31 @@ class BitacoraService {
   private lastScreen: string | null = null;
   private currentAppSessionStart: Date | null = null;
   private pendingAppEvents: any[] = [];
+
+  /**
+   * Convierte una fecha a string en horario de México (UTC-6)
+   * Formato: YYYY-MM-DD HH:mm:ss
+   */
+  private toMexicoTime(date: Date): string {
+    // México está en UTC-6 (CST) o UTC-5 (CDT)
+    // Usando UTC-6 como estándar
+    const mexicoOffset = -6 * 60; // -6 horas en minutos
+    const localOffset = date.getTimezoneOffset(); // Offset local en minutos
+    const totalOffset = mexicoOffset - localOffset;
+    
+    // Crear nueva fecha ajustada
+    const mexicoDate = new Date(date.getTime() + totalOffset * 60 * 1000);
+    
+    // Formatear como YYYY-MM-DD HH:mm:ss
+    const year = mexicoDate.getFullYear();
+    const month = String(mexicoDate.getMonth() + 1).padStart(2, '0');
+    const day = String(mexicoDate.getDate()).padStart(2, '0');
+    const hours = String(mexicoDate.getHours()).padStart(2, '0');
+    const minutes = String(mexicoDate.getMinutes()).padStart(2, '0');
+    const seconds = String(mexicoDate.getSeconds()).padStart(2, '0');
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
 
   /**
    * Inicializa el servicio con el realm proporcionado
@@ -388,18 +423,23 @@ class BitacoraService {
     tipoSync: 'completa' | 'incremental' | 'manual',
     endpoint: string,
     sesionId?: string,
+    origenSync?: 'manual' | 'auto' | 'background',
   ): Promise<string> {
     if (!this.realm) {
       console.warn('[BitacoraService] Realm no inicializado');
       return this.generateBitacoraId();
     }
 
+    this.invalidateDeviceInfoCache();
     const deviceInfo = await this.getDeviceInfo();
     const networkInfo = await this.getNetworkInfo();
     const id = this.generateBitacoraId();
     const idBitacoraMovil = `${id}-${tabla}`;
 
     try {
+      const { AppState } = require('react-native');
+      const currentAppState = AppState.currentState || 'unknown';
+
       this.realm.write(() => {
         this.realm!.create('BitacoraSync', {
           id,
@@ -425,6 +465,10 @@ class BitacoraService {
           latenciaMs: networkInfo.latenciaMs,
           esConexionMetered: networkInfo.esConexionMetered,
 
+          appState: currentAppState,
+          pantalla: this.lastScreen,
+          origenSync: origenSync || 'auto',
+
           sucursal: this.currentSucursal,
           tabla,
           tipoSync,
@@ -446,7 +490,9 @@ class BitacoraService {
         });
       });
 
-      console.log(`[BitacoraService] Inicio registrado: ${tabla} (${id})`);
+      console.log(
+        `[BitacoraService] Inicio registrado: ${tabla} (${id}) - AppState: ${currentAppState}, Origen: ${origenSync || 'auto'}`,
+      );
     } catch (error) {
       console.error('[BitacoraService] Error registrando inicio:', error);
     }
@@ -541,6 +587,7 @@ class BitacoraService {
       return this.generateBitacoraId();
     }
 
+    this.invalidateDeviceInfoCache();
     const deviceInfo = await this.getDeviceInfo();
     const id = this.generateBitacoraId();
     const idSesionMovil = `SES-${id}`;
@@ -674,6 +721,7 @@ class BitacoraService {
       );
     }
 
+    this.invalidateDeviceInfoCache();
     const deviceInfo = await this.getDeviceInfo();
     const networkInfo = await this.getNetworkInfo();
     const idSesionAppMovil = `APP-SES-${id}`;
@@ -1030,6 +1078,9 @@ class BitacoraService {
         velocidadCargaMbps: b.velocidadCargaMbps,
         latenciaMs: b.latenciaMs,
         esConexionMetered: b.esConexionMetered,
+        appState: b.appState,
+        pantalla: b.pantalla,
+        origenSync: b.origenSync,
         sucursal: b.sucursal,
         tabla: b.tabla,
         tipoSync: b.tipoSync,
@@ -1123,8 +1174,8 @@ class BitacoraService {
       // Preparar payload para el servidor
       const payload = bitacoras.map(b => ({
         idBitacoraMovil: b.idBitacoraMovil,
-        fechaInicio: b.fechaInicio.toISOString(),
-        fechaFinal: b.fechaFinal?.toISOString() || null,
+        fechaInicio: this.toMexicoTime(b.fechaInicio),
+        fechaFinal: b.fechaFinal ? this.toMexicoTime(b.fechaFinal) : null,
         duracionMs: b.duracionMs,
         idUsuario: b.idUsuario,
         nombreUsuario: b.nombreUsuario,
@@ -1140,6 +1191,9 @@ class BitacoraService {
         velocidadCargaMbps: b.velocidadCargaMbps,
         latenciaMs: b.latenciaMs,
         esConexionMetered: b.esConexionMetered,
+        appState: b.appState,
+        pantalla: b.pantalla,
+        origenSync: b.origenSync,
         sucursal: b.sucursal,
         tabla: b.tabla,
         tipoSync: b.tipoSync,
@@ -1255,8 +1309,8 @@ class BitacoraService {
     try {
       const payload = sesiones.map(s => ({
         idSesionMovil: s.idSesionMovil,
-        fechaInicio: s.fechaInicio.toISOString(),
-        fechaFinal: s.fechaFinal?.toISOString() || null,
+        fechaInicio: this.toMexicoTime(s.fechaInicio),
+        fechaFinal: s.fechaFinal ? this.toMexicoTime(s.fechaFinal) : null,
         duracionTotalMs: s.duracionTotalMs,
         idUsuario: s.idUsuario,
         nombreUsuario: s.nombreUsuario,
