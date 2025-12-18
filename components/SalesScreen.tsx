@@ -342,6 +342,8 @@ export default function SalesScreen() {
   }, [currentUser, currentSucursal]);
 
   const processSale = async () => {
+    setSaleProcessLocked(true);
+    setProcessingSale(true);
     const client = selectedClient;
 
     if (!client) {
@@ -399,8 +401,6 @@ export default function SalesScreen() {
       return;
     }
 
-    setSaleProcessLocked(true);
-    setProcessingSale(true);
     try {
       const sucursal = currentSucursal || 0;
       const saleIdMovil = buildMovilSaleId(sucursal);
@@ -708,11 +708,13 @@ export default function SalesScreen() {
               label="Efectivo"
               selected={metodoPago === 'efectivo'}
               onPress={() => setMetodoPago('efectivo')}
+              disabled={selectedClient ? selectedClient.credito : true}
             />
             <PayChip
               label="Transferencia"
               selected={metodoPago === 'transferencia'}
               onPress={() => setMetodoPago('transferencia')}
+              disabled={selectedClient ? selectedClient.credito : true}
             />
             <PayChip
               label="Crédito"

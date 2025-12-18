@@ -204,7 +204,7 @@ export default function SyncStatusPanel({
           <Text style={styles.title}>Sincronización Automática</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={[
               styles.syncButton,
               state.status === 'syncing' && styles.syncButtonDisabled,
@@ -218,7 +218,7 @@ export default function SyncStatusPanel({
               color={state.status === 'syncing' ? COLORS.muted : COLORS.primary}
               size={18}
             />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 
