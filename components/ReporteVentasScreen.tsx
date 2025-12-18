@@ -229,10 +229,20 @@ export default function ReporteVentasScreen() {
 
         if (soloLocales) {
           // Consultar Local: solo ventas con id >= threshold (ventas locales)
-          return inDateRange && inSucursal && venta.noVenta == 0;
+          return (
+            inDateRange &&
+            inSucursal &&
+            venta.noVenta == 0 &&
+            venta.claveProd !== 0
+          );
         } else {
           // Consultar: solo ventas con id < threshold (ventas remotas/API)
-          return inDateRange && inSucursal && venta.noVenta > 0;
+          return (
+            inDateRange &&
+            inSucursal &&
+            venta.noVenta > 0 &&
+            venta.claveProd !== 0
+          );
         }
       });
       console.log('[Reporte] Filtered results', { count: filtered.length });
@@ -310,10 +320,27 @@ export default function ReporteVentasScreen() {
       });
 
       const groupedArray = Array.from(groupedMap.values());
+
+      // Ordenar según el tipo de consulta
+      if (soloLocales) {
+        // Ventas locales: ordenar por fecha de mayor a menor (más reciente primero)
+        groupedArray.sort((a, b) => {
+          const dateA = new Date(a.fecha).getTime();
+          const dateB = new Date(b.fecha).getTime();
+          return dateB - dateA; // Descendente
+        });
+      } else {
+        // Ventas remotas: ordenar por no_venta de mayor a menor (descendente)
+        groupedArray.sort((a, b) => b.no_venta - a.no_venta);
+      }
+
       console.log('[Reporte] Grouped results', {
         totalGroups: groupedArray.length,
+        soloLocales,
+        ordenamiento: soloLocales ? 'fecha DESC' : 'no_venta ASC',
         groups: groupedArray.map(g => ({
           no_venta: g.no_venta,
+          fecha: g.fecha,
           productos: g.productos.length,
           total: g.totalImporte,
         })),
@@ -812,7 +839,7 @@ export default function ReporteVentasScreen() {
                         style={styles.iconBtn}
                       >
                         <Icon
-                          name="receipt"
+                          name={group.folioFactura ? 'print' : 'request-quote'}
                           type="material"
                           color={
                             !group.folioFactura && !group.facturacionMovil

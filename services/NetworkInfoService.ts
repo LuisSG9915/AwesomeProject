@@ -1,7 +1,7 @@
 /**
  * NetworkInfoService
  * Servicio para capturar información detallada de conectividad de red
- * 
+ *
  * Funcionalidades:
  * - Detectar tipo de conexión (WiFi, Cellular, etc.)
  * - Medir calidad de señal
@@ -74,7 +74,10 @@ class NetworkInfoService {
 
       return networkInfo;
     } catch (error) {
-      console.error('[NetworkInfoService] Error obteniendo info de red:', error);
+      console.error(
+        '[NetworkInfoService] Error obteniendo info de red:',
+        error,
+      );
       const networkInfo = this.getDefaultNetworkInfo();
       return networkInfo;
     }
@@ -93,7 +96,7 @@ class NetworkInfoService {
    */
   private mapConnectionType(type: string | null): string | null {
     if (!type) return 'unknown';
-    
+
     const typeMap: { [key: string]: string } = {
       wifi: 'wifi',
       cellular: 'cellular',
@@ -118,7 +121,7 @@ class NetworkInfoService {
 
     if (state.type === 'cellular' && state.details) {
       const details = state.details as any;
-      
+
       // React Native NetInfo proporciona cellularGeneration
       if (details.cellularGeneration) {
         return details.cellularGeneration; // '2g', '3g', '4g', '5g'
@@ -140,9 +143,12 @@ class NetworkInfoService {
     // Para WiFi, intentar obtener la fuerza de señal si está disponible
     if (state.type === 'wifi' && state.details) {
       const details = state.details as any;
-      
-      console.log('[NetworkInfoService] WiFi details:', JSON.stringify(details));
-      
+
+      console.log(
+        '[NetworkInfoService] WiFi details:',
+        JSON.stringify(details),
+      );
+
       // Algunos dispositivos proporcionan strength (0-100)
       if (typeof details.strength === 'number') {
         return Math.max(0, Math.min(100, details.strength));
@@ -171,9 +177,12 @@ class NetworkInfoService {
     // Para cellular, estimar basado en la generación
     if (state.type === 'cellular' && state.details) {
       const details = state.details as any;
-      
-      console.log('[NetworkInfoService] Cellular details:', JSON.stringify(details));
-      
+
+      console.log(
+        '[NetworkInfoService] Cellular details:',
+        JSON.stringify(details),
+      );
+
       if (details.cellularGeneration === '5g') return 90;
       if (details.cellularGeneration === '4g') return 75;
       if (details.cellularGeneration === '3g') return 50;
@@ -195,14 +204,18 @@ class NetworkInfoService {
     // Si NetInfo proporciona velocidad efectiva
     if (state.details) {
       const details = state.details as any;
-      
+
       // Algunos dispositivos proporcionan downlink (Mbps)
       if (typeof details.downlink === 'number' && details.downlink > 0) {
         return details.downlink;
       }
 
       // Para WiFi, usar linkSpeed si está disponible
-      if (state.type === 'wifi' && typeof details.linkSpeed === 'number' && details.linkSpeed > 0) {
+      if (
+        state.type === 'wifi' &&
+        typeof details.linkSpeed === 'number' &&
+        details.linkSpeed > 0
+      ) {
         return details.linkSpeed;
       }
 
@@ -222,7 +235,7 @@ class NetworkInfoService {
 
     if (state.type === 'cellular' && state.details) {
       const details = state.details as any;
-      
+
       // Estimaciones por generación celular
       if (details.cellularGeneration === '5g') return 100;
       if (details.cellularGeneration === '4g') return 20;
@@ -248,18 +261,30 @@ class NetworkInfoService {
     // Si NetInfo proporciona velocidad efectiva
     if (state.details) {
       const details = state.details as any;
-      
+
       // Algunos dispositivos proporcionan uplink (Mbps)
       if (typeof details.uplink === 'number' && details.uplink > 0) {
         return details.uplink;
       }
     }
 
-    // Estimaciones basadas en descarga (solo para cellular con generación conocida)
+    // Estimaciones basadas en descarga
     const downloadSpeed = this.estimateDownloadSpeed(state);
-    if (downloadSpeed !== null && state.type === 'cellular') {
-      // Upload típicamente es 20-40% del download para cellular
-      return Math.round(downloadSpeed * 0.3 * 10) / 10;
+    if (downloadSpeed !== null) {
+      if (state.type === 'cellular') {
+        // Upload típicamente es 20-40% del download para cellular
+        return Math.round(downloadSpeed * 0.3 * 10) / 10;
+      }
+
+      if (state.type === 'wifi') {
+        // Upload típicamente es 70-90% del download para WiFi
+        return Math.round(downloadSpeed * 0.8 * 10) / 10;
+      }
+
+      if (state.type === 'ethernet') {
+        // Ethernet típicamente tiene upload similar al download
+        return Math.round(downloadSpeed * 0.9 * 10) / 10;
+      }
     }
 
     return null;
@@ -273,10 +298,10 @@ class NetworkInfoService {
       return null;
     }
 
-    // Estimaciones basadas en tipo de conexión (solo para cellular)
+    // Estimaciones basadas en tipo de conexión
     if (state.type === 'cellular' && state.details) {
       const details = state.details as any;
-      
+
       // Estimaciones por generación celular
       if (details.cellularGeneration === '5g') return 10;
       if (details.cellularGeneration === '4g') return 50;
@@ -284,7 +309,25 @@ class NetworkInfoService {
       if (details.cellularGeneration === '2g') return 300;
     }
 
-    // Para WiFi/Ethernet, retornar null ya que varía mucho según red
+    // Para WiFi, estimar basado en velocidad de descarga
+    if (state.type === 'wifi') {
+      const downloadSpeed = this.estimateDownloadSpeed(state);
+      if (downloadSpeed !== null) {
+        // Velocidades altas = latencia baja
+        if (downloadSpeed > 50) return 5; // Excelente
+        if (downloadSpeed > 25) return 10; // Buena
+        if (downloadSpeed > 10) return 20; // Regular
+        return 30; // Baja
+      }
+      // Si no tenemos velocidad, asumir latencia típica de WiFi
+      return 10;
+    }
+
+    // Para Ethernet, latencia típicamente muy baja
+    if (state.type === 'ethernet') {
+      return 2;
+    }
+
     return null;
   }
 
@@ -331,21 +374,21 @@ class NetworkInfoService {
    */
   async getNetworkSummary(): Promise<string> {
     const info = await this.getNetworkInfo();
-    
+
     if (!info.estadoConexion) {
       return 'Sin conexión';
     }
 
     const parts: string[] = [];
-    
+
     if (info.tipoConexionDetallado) {
       parts.push(info.tipoConexionDetallado.toUpperCase());
     }
-    
+
     if (info.intensidadSenal !== null) {
       parts.push(`Señal: ${info.intensidadSenal}%`);
     }
-    
+
     if (info.velocidadDescargaMbps !== null) {
       parts.push(`↓${info.velocidadDescargaMbps.toFixed(1)}Mbps`);
     }

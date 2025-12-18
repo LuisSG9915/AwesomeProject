@@ -18,11 +18,20 @@ export class InventarioSyncTask extends SyncTask {
   }
 
   getEndpoint(): string {
+    // Formatear fecha en horario local mexicano (YYYY-MM-DD HH:mm:ss)
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const fechaLocal = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+
     return `https://cbinfo.no-ip.info:9011/api/MovilesVentas/inventario-erp-movil/${
       this.sucursal
-    }?fechaMovto=${new Date().toISOString()}`;
+    }?fechaMovto=${encodeURIComponent(fechaLocal)}`;
   }
-  // fechaMovto
   getPriority(): number {
     return 5; // Quinta prioridad
   }

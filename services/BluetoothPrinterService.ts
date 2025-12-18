@@ -159,8 +159,8 @@ class BluetoothPrinterService {
             device?.paired === true
               ? true
               : device?.paired === false
-                ? false
-                : undefined,
+              ? false
+              : undefined,
         }));
 
       printers.sort((a, b) => {
@@ -302,11 +302,57 @@ class BluetoothPrinterService {
   }
 
   /**
+   * Intenta reconectar a la impresora guardada si no está conectada
+   */
+  private async ensureConnection(): Promise<boolean> {
+    // Si ya está conectada, verificar que realmente funcione
+    if (this.isConnected && this.currentPrinter) {
+      try {
+        // Intentar inicializar la impresora para verificar conexión
+        await BluetoothEscposPrinter.printerInit();
+        return true;
+      } catch (error) {
+        console.log('[Printer] Conexión perdida, intentando reconectar...');
+        this.isConnected = false;
+      }
+    }
+
+    // Si no está conectada, intentar reconectar a la impresora guardada
+    if (!this.isConnected) {
+      const savedPrinter = await this.loadSavedPrinter();
+      if (savedPrinter) {
+        console.log(
+          '[Printer] Intentando reconexión automática a:',
+          savedPrinter.name,
+        );
+        const connected = await this.connectToPrinter(savedPrinter, {
+          silent: true,
+        });
+        if (connected) {
+          console.log('[Printer] ✅ Reconexión exitosa');
+          return true;
+        }
+      }
+    }
+
+    return this.isConnected;
+  }
+
+  /**
    * Imprime texto plano
    */
   async printText(text: string): Promise<boolean> {
-    if (!this.isConnected) {
-      Alert.alert('No Conectado', 'Selecciona una impresora primero');
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
+      Alert.alert(
+        'Impresora no disponible',
+        'No se pudo conectar a la impresora. Verifica que:\n\n' +
+          '• La impresora esté encendida\n' +
+          '• El Bluetooth esté activado\n' +
+          '• La impresora esté emparejada en Ajustes > Bluetooth',
+      );
       return false;
     }
 
@@ -316,7 +362,11 @@ class BluetoothPrinterService {
       return true;
     } catch (error) {
       console.error('Error printing:', error);
-      Alert.alert('Error de Impresión', 'No se pudo imprimir el ticket');
+      this.isConnected = false; // Marcar como desconectada
+      Alert.alert(
+        'Error de Impresión',
+        'No se pudo imprimir. La impresora puede estar apagada o fuera de alcance.',
+      );
       return false;
     }
   }
@@ -325,8 +375,17 @@ class BluetoothPrinterService {
    * Imprime líneas de ticket con formato
    */
   async printTicket(lines: string[]): Promise<boolean> {
-    if (!this.isConnected) {
-      Alert.alert('No Conectado', 'Selecciona una impresora primero');
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
+      Alert.alert(
+        'Impresora no disponible',
+        'No se pudo conectar a la impresora. Verifica que:\n\n' +
+          '• La impresora esté encendida\n' +
+          '• El Bluetooth esté activado\n' +
+          '• La impresora esté emparejada en Ajustes > Bluetooth',
+      );
       return false;
     }
 
@@ -365,7 +424,11 @@ class BluetoothPrinterService {
       return true;
     } catch (error) {
       console.error('Error printing ticket:', error);
-      Alert.alert('Error de Impresión', 'No se pudo imprimir el ticket');
+      this.isConnected = false; // Marcar como desconectada
+      Alert.alert(
+        'Error de Impresión',
+        'No se pudo imprimir. La impresora puede estar apagada o fuera de alcance.',
+      );
       return false;
     }
   }
@@ -378,8 +441,17 @@ class BluetoothPrinterService {
     title: string,
     lines: string[],
   ): Promise<boolean> {
-    if (!this.isConnected) {
-      Alert.alert('No Conectado', 'Selecciona una impresora primero');
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
+      Alert.alert(
+        'Impresora no disponible',
+        'No se pudo conectar a la impresora. Verifica que:\n\n' +
+          '• La impresora esté encendida\n' +
+          '• El Bluetooth esté activado\n' +
+          '• La impresora esté emparejada en Ajustes > Bluetooth',
+      );
       return false;
     }
 
@@ -438,7 +510,10 @@ class BluetoothPrinterService {
    * Imprime un código QR
    */
   async printQR(data: string, size?: number): Promise<boolean> {
-    if (!this.isConnected) {
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
       console.warn('No hay impresora conectada para imprimir QR');
       return false;
     }
@@ -487,8 +562,17 @@ class BluetoothPrinterService {
     qrUrl?: string;
     selloDigital?: string;
   }): Promise<boolean> {
-    if (!this.isConnected) {
-      Alert.alert('No Conectado', 'Selecciona una impresora primero');
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
+      Alert.alert(
+        'Impresora no disponible',
+        'No se pudo conectar a la impresora. Verifica que:\n\n' +
+          '• La impresora esté encendida\n' +
+          '• El Bluetooth esté activado\n' +
+          '• La impresora esté emparejada en Ajustes > Bluetooth',
+      );
       return false;
     }
 
@@ -551,21 +635,22 @@ class BluetoothPrinterService {
       }
 
       if (params.uuid) {
-        // Imprimir UUID completo, sin recortarlo manualmente
+        // Imprimir UUID completo en múltiples líneas si es necesario
         await BluetoothEscposPrinter.printText('UUID:\n', {});
-        await BluetoothEscposPrinter.printText(params.uuid + '\n', {});
+        // Dividir UUID en líneas de máximo 32 caracteres
+        const uuidChunks = params.uuid.match(/.{1,32}/g) || [params.uuid];
+        for (const chunk of uuidChunks) {
+          await BluetoothEscposPrinter.printText(chunk + '\n', {});
+        }
       }
 
-      if (params.rfcEmisor) {
-        await BluetoothEscposPrinter.printText(
-          leftRight('RFC Emisor:', params.rfcEmisor) + '\n',
-          {},
-        );
-      }
+      await BluetoothEscposPrinter.printText(sepLight + '\n', {});
 
+      // ═══════════════ INFORMACIÓN FISCAL RECEPTOR ═══════════════
+      await BluetoothEscposPrinter.printText('RECEPTOR:\n', { widthtimes: 1 });
       if (params.rfcReceptor) {
         await BluetoothEscposPrinter.printText(
-          leftRight('RFC Receptor:', params.rfcReceptor) + '\n',
+          'RFC: ' + params.rfcReceptor + '\n',
           {},
         );
       }
@@ -655,11 +740,78 @@ class BluetoothPrinterService {
   }
 
   /**
+   * Imprime un ticket CFDI usando las líneas formateadas del servidor
+   * y agrega el código QR al final
+   */
+  async printCFDITicketFromServer(
+    lineas: string[],
+    qrUrl: string,
+  ): Promise<boolean> {
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
+      Alert.alert(
+        'Impresora no disponible',
+        'No se pudo conectar a la impresora. Verifica que:\n\n' +
+          '• La impresora esté encendida\n' +
+          '• El Bluetooth esté activado\n' +
+          '• La impresora esté emparejada en Ajustes > Bluetooth',
+      );
+      return false;
+    }
+
+    try {
+      await BluetoothEscposPrinter.printerInit();
+
+      // Imprimir cada línea del ticket tal como viene del servidor
+      for (const linea of lineas) {
+        await BluetoothEscposPrinter.printText(linea + '\n', {});
+      }
+
+      // Agregar separación antes del QR
+      await BluetoothEscposPrinter.printText('\n', {});
+      await BluetoothEscposPrinter.printText(
+        '        VERIFICACION SAT        \n',
+        {},
+      );
+      await BluetoothEscposPrinter.printText(
+        '    Escanee el codigo QR      \n',
+        {},
+      );
+      await BluetoothEscposPrinter.printText('\n', {});
+
+      // Imprimir código QR al final
+      if (qrUrl) {
+        await this.printQR(qrUrl);
+      }
+
+      // Espaciado final
+      await BluetoothEscposPrinter.printText('\n\n\n', {});
+
+      return true;
+    } catch (error) {
+      console.error('Error printing CFDI ticket from server:', error);
+      Alert.alert('Error de Impresión', 'No se pudo imprimir el ticket CFDI');
+      return false;
+    }
+  }
+
+  /**
    * Prueba de impresión
    */
   async printTest(): Promise<boolean> {
-    if (!this.isConnected) {
-      Alert.alert('No Conectado', 'Selecciona una impresora primero');
+    // Intentar reconectar automáticamente si es necesario
+    const connected = await this.ensureConnection();
+
+    if (!connected) {
+      Alert.alert(
+        'Impresora no disponible',
+        'No se pudo conectar a la impresora. Verifica que:\n\n' +
+          '• La impresora esté encendida\n' +
+          '• El Bluetooth esté activado\n' +
+          '• La impresora esté emparejada en Ajustes > Bluetooth',
+      );
       return false;
     }
 

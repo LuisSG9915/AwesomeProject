@@ -121,7 +121,7 @@ export default function SalesScreen() {
 
       // Cargar productos con precios e inventario
       const productosData = FullSyncService.getProductos(1000);
-      const preciosData = FullSyncService.getPrecios(5000);
+      const preciosData = FullSyncService.getPrecios(10000);
       const inventarioData = FullSyncService.getInventario();
 
       // Crear mapa de precios por claveProd
@@ -221,16 +221,6 @@ export default function SalesScreen() {
       const idx = prev.findIndex(ci => ci.id === p.id);
       if (idx >= 0) {
         const nuevaCantidad = prev[idx].cantidad + 1;
-
-        // Validar que no exceda existencia
-        if (nuevaCantidad > p.existencia) {
-          Alert.alert(
-            'Existencia insuficiente',
-            `Solo hay ${p.existencia} unidades disponibles de ${p.descripcion}`,
-          );
-          return prev;
-        }
-
         const cp = [...prev];
         cp[idx] = { ...cp[idx], cantidad: nuevaCantidad };
         return cp;
@@ -246,14 +236,6 @@ export default function SalesScreen() {
     setCart(prev => {
       return prev.map(ci => {
         if (ci.id === id) {
-          // Validar que no exceda existencia
-          if (cantidad > ci.existencia) {
-            Alert.alert(
-              'Existencia insuficiente',
-              `Solo hay ${ci.existencia} unidades disponibles de ${ci.descripcion}`,
-            );
-            return ci;
-          }
           return { ...ci, cantidad };
         }
         return ci;
@@ -310,7 +292,7 @@ export default function SalesScreen() {
             existencia,
           };
         })
-        .filter((p: Producto) => p.existencia > 0); // Solo productos con existencia
+        .filter((p: Producto) => p.precio > 0); // Solo productos con precio asignado
 
       setProductos(productosFormateados);
       setFilteredProductos(productosFormateados);
@@ -372,6 +354,42 @@ export default function SalesScreen() {
     }
     if (!metodoPago) {
       Alert.alert('Error', 'Selecciona un método de pago');
+      return;
+    }
+
+    // Validar existencias actuales antes de procesar
+    // Obtener inventario actualizado en tiempo real
+    const inventarioData = FullSyncService.getInventario();
+    const inventarioMap = new Map<number, number>();
+    inventarioData
+      .filter((i: any) => i.sucursal == currentSucursal)
+      .forEach((i: any) => {
+        const clave = i.claveProd;
+        if (clave === null || clave === undefined) return;
+        const saldoActual = inventarioMap.get(clave) || 0;
+        inventarioMap.set(clave, saldoActual + (i.saldo || 0));
+      });
+
+    const productosInsuficientes: string[] = [];
+    cart.forEach(item => {
+      const claveProdNum = parseInt(item.claveProd || '0');
+      const existenciaActual = inventarioMap.get(claveProdNum) || 0;
+
+      if (item.cantidad > existenciaActual) {
+        productosInsuficientes.push(
+          `${item.descripcion} (Requiere: ${item.cantidad}, Disponible: ${existenciaActual})`,
+        );
+      }
+    });
+
+    if (productosInsuficientes.length > 0) {
+      Alert.alert(
+        'Existencias Insuficientes',
+        `No se puede procesar la venta. Los siguientes productos no tienen existencias suficientes:\n\n${productosInsuficientes.join(
+          '\n',
+        )}`,
+        [{ text: 'Entendido', style: 'default' }],
+      );
       return;
     }
 

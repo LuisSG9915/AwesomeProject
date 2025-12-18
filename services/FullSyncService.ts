@@ -13,6 +13,8 @@ class FullSyncService {
   private apiBaseUrl = 'https://cbinfo.no-ip.info:9011';
   private isSyncing = false; // MUTEX: Prevenir sincronizaciones concurrentes
   private initializePromise: Promise<void> | null = null; // MUTEX: Prevenir inicializaciones concurrentes
+  private isSendingVentas = false; // MUTEX: Prevenir arrastre concurrente de ventas
+  private isSendingCobranza = false; // MUTEX: Prevenir arrastre concurrente de cobranza
 
   // Contexto de usuario para bitácora
   private currentUserId: number | null = null;
@@ -540,10 +542,6 @@ class FullSyncService {
 
             // Obtener el fechaLog del registro con el ID más alto
             const syncedArValue = maxIdVenta?.fecha ?? nowMexico;
-            console.log(ventas);
-            console.log(
-              `[Incremental] ID más alto del servidor: ${maxId}, fechaLog: ${syncedArValue}`,
-            );
 
             this.realm!.write(() => {
               for (const venta of ventas) {
@@ -643,9 +641,22 @@ class FullSyncService {
           name: 'InventarioIncremental',
           run: async () => {
             const tableName = 'Inventario';
+
+            // Formatear fecha en horario local mexicano (YYYY-MM-DD HH:mm:ss)
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            const fechaLocal = `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+
             const url = `${
               this.apiBaseUrl
-            }/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${new Date().toISOString()}`;
+            }/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${encodeURIComponent(
+              fechaLocal,
+            )}`;
 
             console.log('[Incremental] Inventario desde', url);
 
@@ -721,7 +732,9 @@ class FullSyncService {
       ): Promise<IncrementalTaskResult> => {
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
-            reject(new Error(`Timeout de 7 segundos excedido para ${taskName}`));
+            reject(
+              new Error(`Timeout de 7 segundos excedido para ${taskName}`),
+            );
           }, 7000);
         });
 
@@ -749,7 +762,9 @@ class FullSyncService {
         );
 
         try {
-          console.log(`[Incremental] Iniciando ${task.name} con timeout de 7 segundos...`);
+          console.log(
+            `[Incremental] Iniciando ${task.name} con timeout de 7 segundos...`,
+          );
           const result = await runWithTimeout(task.run, task.name);
           const fechaFinalTask = new Date();
 
@@ -798,7 +813,7 @@ class FullSyncService {
         } catch (error: any) {
           const msg = error?.message || 'Error desconocido';
           const isTimeout = msg.includes('Timeout de 7 segundos');
-          
+
           if (isTimeout) {
             console.warn(
               `[FullSyncService] ⏱️ TIMEOUT en ${task.name} - Omitiendo y continuando con siguiente tabla`,
@@ -809,7 +824,7 @@ class FullSyncService {
               msg,
             );
           }
-          
+
           errors.push(`${task.name}: ${msg}`);
 
           // Guardar log de error/timeout
@@ -846,9 +861,11 @@ class FullSyncService {
             currentTask,
             totalTasks,
             'error',
-            isTimeout ? `Timeout en ${task.name}` : `Error en ${task.name}: ${msg}`,
+            isTimeout
+              ? `Timeout en ${task.name}`
+              : `Error en ${task.name}: ${msg}`,
           );
-          
+
           // Continuar con el siguiente proceso sin detener la sincronización
           console.log(`[FullSyncService] Continuando con siguiente tabla...`);
         }
@@ -1711,6 +1728,19 @@ class FullSyncService {
     sucursal: number,
     idUsuario: number,
   ): Promise<{ success: boolean; sent: number; error?: string }> {
+    // ========================================
+    // GUARD: Prevenir ejecuciones concurrentes
+    // ========================================
+    if (this.isSendingVentas) {
+      console.log(
+        '[FullSyncService] ⚠️ Arrastre de ventas ya en ejecución, omitiendo llamada duplicada',
+      );
+      return { success: true, sent: 0, error: 'Arrastre ya en ejecución' };
+    }
+
+    this.isSendingVentas = true;
+    console.log('[FullSyncService] 🔒 Bloqueando arrastre de ventas');
+
     const LOCAL_SALE_ID_THRESHOLD = 1700000000;
 
     // Calcular fecha límite: últimos 3 días
@@ -1779,6 +1809,21 @@ class FullSyncService {
         return { success: true, sent: 0 };
       }
 
+      // Función helper para formatear fecha en horario local (sin zona horaria)
+      const formatLocalDate = (
+        date: Date | string | null | undefined,
+      ): string => {
+        const d =
+          date instanceof Date ? date : date ? new Date(date) : new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+      };
+
       const payload = ventasLocales.map((venta: any) => {
         const cliente = venta.cveCliente
           ? this.getClienteFullById(venta.cveCliente)
@@ -1790,7 +1835,7 @@ class FullSyncService {
           Cant_producto: venta.cantProducto ?? 0,
           precio: venta.precio ?? 0,
           Cve_cliente: venta.cveCliente ?? 0,
-          fecha: (venta.fecha ?? new Date()).toISOString(),
+          fecha: formatLocalDate(venta.fecha ?? new Date()),
           tipo_pago: venta.tipoPago ?? 1,
           usuario: idUsuario,
           longitud: cliente?.longitud ?? 0,
@@ -1862,6 +1907,12 @@ class FullSyncService {
       });
 
       return { success: false, sent: 0, error: errorMsg };
+    } finally {
+      // Liberar el mutex siempre, incluso si hay error
+      this.isSendingVentas = false;
+      console.log(
+        '[FullSyncService] 🔓 Liberando bloqueo de arrastre de ventas',
+      );
     }
   }
 
@@ -1874,6 +1925,19 @@ class FullSyncService {
     sucursal: number,
     idUsuario: number,
   ): Promise<{ success: boolean; sent: number; error?: string }> {
+    // ========================================
+    // GUARD: Prevenir ejecuciones concurrentes
+    // ========================================
+    if (this.isSendingCobranza) {
+      console.log(
+        '[FullSyncService] ⚠️ Arrastre de cobranza ya en ejecución, omitiendo llamada duplicada',
+      );
+      return { success: true, sent: 0, error: 'Arrastre ya en ejecución' };
+    }
+
+    this.isSendingCobranza = true;
+    console.log('[FullSyncService] 🔒 Bloqueando arrastre de cobranza');
+
     const LOCAL_COBRANZA_ID_THRESHOLD = 170000000;
 
     // ========================================
@@ -2016,6 +2080,12 @@ class FullSyncService {
       });
 
       return { success: false, sent: 0, error: errorMsg };
+    } finally {
+      // Liberar el mutex siempre, incluso si hay error
+      this.isSendingCobranza = false;
+      console.log(
+        '[FullSyncService] 🔓 Liberando bloqueo de arrastre de cobranza',
+      );
     }
   }
 

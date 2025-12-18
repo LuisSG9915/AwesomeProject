@@ -42,8 +42,8 @@ class BackgroundSyncService {
   private static instance: BackgroundSyncService;
 
   // Configuración
-  private readonly SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos - app activa (setInterval)
-  private readonly FOREGROUND_INTERVAL_MINUTES = 10; // 10 minutos - Foreground Service (background/cerrada)
+  private readonly SYNC_INTERVAL_MS = 1 * 60 * 1000; // 10 minutos - app activa (setInterval)
+  private readonly FOREGROUND_INTERVAL_MINUTES = 1; // 10 minutos - Foreground Service (background/cerrada)
   private readonly BACKGROUND_FETCH_TASK_ID = 'com.awesomeproject.sync';
 
   // Estado interno
@@ -79,7 +79,10 @@ class BackgroundSyncService {
   async start(): Promise<void> {
     // GUARD ROBUSTO: Si ya está activo, no crear otro intervalo
     if (this.intervalId) {
-      console.log('[BackgroundSync] ⚠️ Ya está activo con intervalo ID:', this.intervalId);
+      console.log(
+        '[BackgroundSync] ⚠️ Ya está activo con intervalo ID:',
+        this.intervalId,
+      );
       console.log('[BackgroundSync] ℹ️ Ignorando llamada duplicada a start()');
       return;
     }
@@ -109,7 +112,9 @@ class BackgroundSyncService {
       }
     }, 3000);
     */
-    console.log('[BackgroundSync] ℹ️ Foreground Service deshabilitado temporalmente');
+    console.log(
+      '[BackgroundSync] ℹ️ Foreground Service deshabilitado temporalmente',
+    );
 
     // Usar intervalo para cuando la app está en primer plano (más preciso)
     this.intervalId = setInterval(() => {
@@ -121,7 +126,9 @@ class BackgroundSyncService {
     this.setupAppStateListener();
 
     console.log(
-      `[BackgroundSync] ✅ Sistema configurado - Foreground: ${this.FOREGROUND_INTERVAL_MINUTES}min, Intervalo: ${this.SYNC_INTERVAL_MS/1000}s`,
+      `[BackgroundSync] ✅ Sistema configurado - Foreground: ${
+        this.FOREGROUND_INTERVAL_MINUTES
+      }min, Intervalo: ${this.SYNC_INTERVAL_MS / 1000}s`,
     );
   }
 
@@ -135,33 +142,44 @@ class BackgroundSyncService {
       this.appStateSubscription.remove();
     }
 
-    this.appStateSubscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      console.log('[BackgroundSync] 📱 AppState cambió a:', nextAppState);
+    this.appStateSubscription = AppState.addEventListener(
+      'change',
+      (nextAppState: AppStateStatus) => {
+        console.log('[BackgroundSync] 📱 AppState cambió a:', nextAppState);
 
-      if (nextAppState === 'background' || nextAppState === 'inactive') {
-        // App va a background - limpiar intervalo, Foreground Service tomará el control
-        if (this.intervalId) {
-          console.log(`[BackgroundSync] 🌙 App en background - limpiando intervalo, Foreground Service activo (${this.FOREGROUND_INTERVAL_MINUTES} min)`);
-          clearInterval(this.intervalId);
-          this.intervalId = null;
-        }
-      } else if (nextAppState === 'active') {
-        // App vuelve a foreground - reiniciar intervalo si no existe
-        if (!this.intervalId) {
-          console.log(`[BackgroundSync] ☀️ App en foreground - reiniciando intervalo (${this.SYNC_INTERVAL_MS/1000}s)`);
-          this.intervalId = setInterval(() => {
-            console.log('[BackgroundSync] ⏰ Intervalo disparado - ejecutando sync');
-            this.performSync('interval');
-          }, this.SYNC_INTERVAL_MS);
+        if (nextAppState === 'background' || nextAppState === 'inactive') {
+          // App va a background - limpiar intervalo, Foreground Service tomará el control
+          if (this.intervalId) {
+            console.log(
+              `[BackgroundSync] 🌙 App en background - limpiando intervalo, Foreground Service activo (${this.FOREGROUND_INTERVAL_MINUTES} min)`,
+            );
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+          }
+        } else if (nextAppState === 'active') {
+          // App vuelve a foreground - reiniciar intervalo si no existe
+          if (!this.intervalId) {
+            console.log(
+              `[BackgroundSync] ☀️ App en foreground - reiniciando intervalo (${
+                this.SYNC_INTERVAL_MS / 1000
+              }s)`,
+            );
+            this.intervalId = setInterval(() => {
+              console.log(
+                '[BackgroundSync] ⏰ Intervalo disparado - ejecutando sync',
+              );
+              this.performSync('interval');
+            }, this.SYNC_INTERVAL_MS);
 
-          // Actualizar próxima sincronización
-          const nextSync = new Date(Date.now() + this.SYNC_INTERVAL_MS);
-          this.updateState({
-            nextSyncTime: nextSync,
-          });
+            // Actualizar próxima sincronización
+            const nextSync = new Date(Date.now() + this.SYNC_INTERVAL_MS);
+            this.updateState({
+              nextSyncTime: nextSync,
+            });
+          }
         }
-      }
-    });
+      },
+    );
 
     console.log('[BackgroundSync] 👂 Listener de AppState configurado');
   }
@@ -191,7 +209,10 @@ class BackgroundSyncService {
         async taskId => {
           // Este callback se ejecuta cuando la app está activa
           // NOTA: Si hay intervalo activo, BackgroundFetch NO debe disparar sync
-          console.log('[BackgroundFetch] 📡 Tarea recibida (app activa):', taskId);
+          console.log(
+            '[BackgroundFetch] 📡 Tarea recibida (app activa):',
+            taskId,
+          );
 
           // Si hay intervalo activo, omitir (ya se maneja por setInterval)
           if (this.intervalId) {
@@ -201,7 +222,9 @@ class BackgroundSyncService {
           }
 
           try {
-            console.log('[BackgroundFetch] 🔄 Ejecutando sync desde BackgroundFetch');
+            console.log(
+              '[BackgroundFetch] 🔄 Ejecutando sync desde BackgroundFetch',
+            );
             await this.performSync('backgroundFetch');
           } catch (error) {
             console.error('[BackgroundFetch] Error en sincronización:', error);
@@ -254,7 +277,9 @@ class BackgroundSyncService {
   async stop(): Promise<void> {
     // Detener intervalo de primer plano
     if (this.intervalId) {
-      console.log(`[BackgroundSync] 🛑 Deteniendo intervalo (ID: ${this.intervalId})`);
+      console.log(
+        `[BackgroundSync] 🛑 Deteniendo intervalo (ID: ${this.intervalId})`,
+      );
       clearInterval(this.intervalId);
       this.intervalId = null;
 
@@ -350,27 +375,42 @@ class BackgroundSyncService {
    * - Retry logic con exponential backoff
    * - Dependencias entre tablas
    */
-  private async performSync(source: 'interval' | 'backgroundFetch' | 'manual' = 'manual'): Promise<void> {
+  private async performSync(
+    source: 'interval' | 'backgroundFetch' | 'manual' = 'manual',
+  ): Promise<void> {
     const timestamp = new Date().toISOString();
     const now = Date.now();
-    
+
     // GUARD 1: Evitar sincronizaciones concurrentes
     if (this.state.status === 'syncing') {
-      console.log(`[BackgroundSync] ⚠️ [${timestamp}] [${source}] Ya hay una sincronización en curso - OMITIENDO`);
+      console.log(
+        `[BackgroundSync] ⚠️ [${timestamp}] [${source}] Ya hay una sincronización en curso - OMITIENDO`,
+      );
       return;
     }
 
-    // GUARD 2: Prevenir ejecuciones muy cercanas (< 60 segundos)
+    // GUARD 2: Prevenir ejecuciones automáticas muy cercanas (< 60 segundos)
+    // Las sincronizaciones manuales siempre se permiten
     const timeSinceLastSync = now - this.lastSyncStartTime;
-    if (this.lastSyncStartTime > 0 && timeSinceLastSync < 60000) {
-      console.log(`[BackgroundSync] ⚠️ [${timestamp}] [${source}] Última sync hace ${Math.round(timeSinceLastSync/1000)}s - demasiado reciente, OMITIENDO`);
+    if (
+      source !== 'manual' &&
+      this.lastSyncStartTime > 0 &&
+      timeSinceLastSync < 60000
+    ) {
+      console.log(
+        `[BackgroundSync] ⚠️ [${timestamp}] [${source}] Última sync hace ${Math.round(
+          timeSinceLastSync / 1000,
+        )}s - demasiado reciente, OMITIENDO`,
+      );
       return;
     }
 
     // Registrar tiempo de inicio
     this.lastSyncStartTime = now;
 
-    console.log(`[BackgroundSync] 🔄 [${timestamp}] [${source}] Iniciando sincronización...`);
+    console.log(
+      `[BackgroundSync] 🔄 [${timestamp}] [${source}] Iniciando sincronización...`,
+    );
 
     this.updateState({
       status: 'syncing',
@@ -469,7 +509,8 @@ class BackgroundSyncService {
           errorMessage: null,
           syncCount: this.state.syncCount + 1,
         });
-        const duration = now.getTime() - Date.now() + (now.getTime() - Date.now());
+        const duration =
+          now.getTime() - Date.now() + (now.getTime() - Date.now());
         console.log(
           `[BackgroundSync] ✅ [${source}] Sincronización completada exitosamente. Próxima en 90s a las ${nextSync.toLocaleTimeString()}`,
         );

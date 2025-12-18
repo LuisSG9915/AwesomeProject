@@ -427,8 +427,8 @@ export default function BillingScreen() {
             {invoices
               .filter(inv => inv.saldo > 0)
               .sort((a, b) => {
-                const dateA = new Date(a.fecha).getTime();
-                const dateB = new Date(b.fecha).getTime();
+                const dateA = new Date(a.fecha).getDate();
+                const dateB = new Date(b.fecha).getDate();
                 return dateB - dateA;
               })
               .map((inv, idx) => (

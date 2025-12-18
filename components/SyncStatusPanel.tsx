@@ -92,14 +92,14 @@ export default function SyncStatusPanel({
               text: 'Configurar Batería',
               onPress: async () => {
                 await requestBatteryOptimizationDisable();
-                // El servicio ya está activo desde App.tsx, solo actualizar estado UI
+                await BackgroundSyncService.start();
                 setIsBackgroundSyncEnabled(true);
               },
             },
             {
               text: 'Activar Ahora',
-              onPress: () => {
-                // El servicio ya está activo desde App.tsx, solo actualizar estado UI
+              onPress: async () => {
+                await BackgroundSyncService.start();
                 setIsBackgroundSyncEnabled(true);
               },
             },
@@ -110,7 +110,7 @@ export default function SyncStatusPanel({
           ],
         );
       } else {
-        BackgroundSyncService.stop();
+        await BackgroundSyncService.stop();
         setIsBackgroundSyncEnabled(false);
       }
     },

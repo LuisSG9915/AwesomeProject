@@ -127,7 +127,6 @@ class FacturaService {
         fechaFactura,
       });
 
-  
       // Llamar API de generación de factura
       const response = await fetch(`${this.apiBaseUrl}${cleanUrl}`, {
         method: 'POST',
@@ -168,9 +167,6 @@ class FacturaService {
           errorMessage = responseText.substring(0, 300);
         }
 
-      
-
-    
         Alert.alert('Error al Generar Factura', errorMessage);
         return { success: false, error: errorMessage };
       }
@@ -190,7 +186,11 @@ class FacturaService {
       console.log('[FacturaService] Factura generada:', { serie, folio, uuid });
 
       try {
-        await FullSyncService.setVentaFolioFactura(item.noVenta, item.sucursal, true);
+        await FullSyncService.setVentaFolioFactura(
+          item.noVenta,
+          item.sucursal,
+          true,
+        );
       } catch (realmError) {
         console.warn(
           '[FacturaService] No se pudo actualizar folioFactura en Realm:',
@@ -206,14 +206,17 @@ class FacturaService {
       } catch (ticketError: any) {
         ticketWarning =
           ticketError?.message || 'No se pudo obtener/imprimir el ticket CFDI';
-        console.error('[FacturaService] Error al obtener ticket CFDI:', ticketError);
+        console.error(
+          '[FacturaService] Error al obtener ticket CFDI:',
+          ticketError,
+        );
       }
 
       Alert.alert(
         '✅ Factura Generada',
-        `Serie: ${serie}\nFolio: ${folio}${
-          uuid ? `\nUUID: ${uuid}` : ''
-        }${ticketWarning ? `\n\nAviso: ${ticketWarning}` : ''}\n\n¿Desea enviar por correo?`,
+        `Serie: ${serie}\nFolio: ${folio}${uuid ? `\nUUID: ${uuid}` : ''}${
+          ticketWarning ? `\n\nAviso: ${ticketWarning}` : ''
+        }\n\n¿Desea enviar por correo?`,
         [
           { text: 'No', style: 'cancel' },
           {
@@ -501,142 +504,39 @@ class FacturaService {
       throw new Error('Formato de respuesta inválido para ticket CFDI');
     }
 
-    // Extraer datos del ticket para formato profesional
-    let uuid = '';
-    let fecha = '';
-    let rfcEmisor = '';
-    let rfcReceptor = '';
-    let total = 0;
-    let qrUrl = '';
-    let selloDigital = '';
-    const conceptos: Array<{
-      descripcion: string;
-      cantidad: number;
-      precio: number;
-      importe: number;
-    }> = [];
+    console.log('[FacturaService] Datos recibidos del ticket CFDI:', data);
 
-    if (Array.isArray(data)) {
-      data.forEach((item: any, index: number) => {
-        // 1) Intentar leer campos estructurados si existen
-        if (item.uuid) uuid = String(item.uuid);
-        if (item.fecha) fecha = String(item.fecha);
-        if (item.rfcEmisor) rfcEmisor = String(item.rfcEmisor);
-        if (item.rfcReceptor) rfcReceptor = String(item.rfcReceptor);
-        if (item.total) total = parseFloat(item.total) || total;
-        if (item.qr) qrUrl = String(item.qr);
-        if (item.sello || item.selloDigital)
-          selloDigital = String(item.sello || item.selloDigital);
-
-        // 2) Extraer conceptos si vienen estructurados
-        if (item.descripcion && item.cantidad !== undefined) {
-          conceptos.push({
-            descripcion: String(item.descripcion),
-            cantidad: parseFloat(item.cantidad) || 1,
-            precio: parseFloat(item.precio || item.valorUnitario) || 0,
-            importe: parseFloat(item.importe) || 0,
-          });
-        }
-
-        // 3) Fallback: parsear texto como en el sistema viejo
-        const line =
-          typeof item === 'string'
-            ? item
-            : item.linea || item.descripcion || '';
-        if (!line) {
-          return;
-        }
-
-        const lower = line.toLowerCase();
-
-        // UUID / Folio fiscal
-        if (!uuid && (lower.includes('uuid:') || lower.includes('folio fiscal:'))) {
-          const parts = line.split(':');
-          if (parts.length > 1) {
-            uuid = parts[1].trim();
-          }
-        }
-
-        // RFC Emisor
-        if (!rfcEmisor && lower.includes('rfc emisor')) {
-          const parts = line.split(':');
-          if (parts.length > 1) {
-            rfcEmisor = parts[1].trim();
-          }
-        }
-
-        // RFC Receptor
-        if (!rfcReceptor && lower.includes('rfc receptor')) {
-          const parts = line.split(':');
-          if (parts.length > 1) {
-            rfcReceptor = parts[1].trim();
-          }
-        }
-
-        // Total
-        if (!total && lower.includes('total')) {
-          const match = line.match(/[0-9]+[0-9.,]*/);
-          if (match) {
-            const num = parseFloat(match[0].replace(',', ''));
-            if (!isNaN(num)) {
-              total = num;
-            }
-          }
-        }
-
-        // Sello CFD / Sello digital
-        if (
-          !selloDigital &&
-          (lower.includes('sello cfd') || lower.includes('sello digital'))
-        ) {
-          const parts = line.split(':');
-          if (parts.length > 1) {
-            selloDigital = parts[1].trim();
-          }
-        }
-
-        // QR directo en texto
-        if (!qrUrl && lower.includes('qr:')) {
-          const parts = line.split(':');
-          if (parts.length > 1) {
-            qrUrl = parts[1].trim();
-          }
-        }
-      });
-    }
-
-    // Si no hay QR, construir URL de verificación SAT similar al sistema viejo
-    if (!qrUrl) {
-      if (uuid && rfcEmisor && rfcReceptor && total > 0) {
-        const totalStr = total.toFixed(2);
-        const selloLast8 = selloDigital ? selloDigital.slice(-8) : '';
-        qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}&re=${rfcEmisor}&rr=${rfcReceptor}&tt=${totalStr}&fe=${selloLast8}`;
-      } else if (uuid) {
-        qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${uuid}`;
-      } else {
-        qrUrl = `https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx?id=${serie}-${folio}`;
-      }
-    }
-
-    // Usar el nuevo método de impresión profesional con QR
+    // Verificar que hay impresora conectada
     const status = BluetoothPrinterService.getStatus();
     if (!status.connected) {
       Alert.alert('Impresora', 'No hay impresora Bluetooth conectada');
       return;
     }
 
-    await BluetoothPrinterService.printCFDITicket({
-      serie,
-      folio,
-      uuid: uuid || undefined,
-      fecha: fecha || new Date().toLocaleString('es-MX'),
-      rfcEmisor: rfcEmisor || 'PHA030403QX9',
-      rfcReceptor: rfcReceptor || undefined,
-      total: total > 0 ? total : undefined,
-      conceptos: conceptos.length > 0 ? conceptos : undefined,
-      qrUrl,
-      selloDigital: selloDigital || undefined,
-    });
+    // Extraer las líneas y el QR del servidor
+    const lineas: string[] = [];
+    let qrUrl = '';
+
+    if (Array.isArray(data)) {
+      data.forEach((item: any) => {
+        // Extraer la línea de texto
+        const linea = item.linea || item.LINEA || '';
+        if (linea) {
+          lineas.push(linea);
+        }
+
+        // Extraer el QR (viene en el campo 'qr')
+        if (item.qr && !qrUrl) {
+          qrUrl = item.qr;
+        }
+      });
+    }
+
+    console.log('[FacturaService] Líneas a imprimir:', lineas.length);
+    console.log('[FacturaService] QR URL:', qrUrl);
+
+    // Imprimir el ticket con las líneas del servidor y el QR al final
+    await BluetoothPrinterService.printCFDITicketFromServer(lineas, qrUrl);
   }
 
   private generateXMLContent(items: FacturaItem[]): string {

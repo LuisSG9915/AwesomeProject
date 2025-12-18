@@ -306,7 +306,7 @@ export default function DataViewScreen() {
   };
 
   const renderVenta = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => console.log(item, 'ventas')}>
+    <TouchableOpacity onPress={() => console.log('ventas', item)}>
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
@@ -470,7 +470,7 @@ export default function DataViewScreen() {
   );
 
   const renderCartera = ({ item }: { item: any }) => (
-    <TouchableOpacity onPress={() => consoleRealm('ventas', item)}>
+    <TouchableOpacity onPress={() => console.log('ventas', item)}>
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>

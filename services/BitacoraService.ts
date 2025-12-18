@@ -220,23 +220,13 @@ class BitacoraService {
    * Formato: YYYY-MM-DD HH:mm:ss
    */
   private toMexicoTime(date: Date): string {
-    // México está en UTC-6 (CST) o UTC-5 (CDT)
-    // Usando UTC-6 como estándar
-    const mexicoOffset = -6 * 60; // -6 horas en minutos
-    const localOffset = date.getTimezoneOffset(); // Offset local en minutos
-    const totalOffset = mexicoOffset - localOffset;
-    
-    // Crear nueva fecha ajustada
-    const mexicoDate = new Date(date.getTime() + totalOffset * 60 * 1000);
-    
-    // Formatear como YYYY-MM-DD HH:mm:ss
-    const year = mexicoDate.getFullYear();
-    const month = String(mexicoDate.getMonth() + 1).padStart(2, '0');
-    const day = String(mexicoDate.getDate()).padStart(2, '0');
-    const hours = String(mexicoDate.getHours()).padStart(2, '0');
-    const minutes = String(mexicoDate.getMinutes()).padStart(2, '0');
-    const seconds = String(mexicoDate.getSeconds()).padStart(2, '0');
-    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
@@ -491,7 +481,9 @@ class BitacoraService {
       });
 
       console.log(
-        `[BitacoraService] Inicio registrado: ${tabla} (${id}) - AppState: ${currentAppState}, Origen: ${origenSync || 'auto'}`,
+        `[BitacoraService] Inicio registrado: ${tabla} (${id}) - AppState: ${currentAppState}, Origen: ${
+          origenSync || 'auto'
+        }`,
       );
     } catch (error) {
       console.error('[BitacoraService] Error registrando inicio:', error);
@@ -706,8 +698,8 @@ class BitacoraService {
               (s.ultimoAppState === 'background'
                 ? 'cierre_forzado_background'
                 : s.ultimoAppState === 'active'
-                  ? 'cierre_forzado_activo'
-                  : 'cierre_forzado');
+                ? 'cierre_forzado_activo'
+                : 'cierre_forzado');
             s.fechaFinal = fechaInicio;
             s.duracionTotalMs = fechaInicio.getTime() - s.fechaInicio.getTime();
             s.razonCierre = razon;
@@ -763,7 +755,10 @@ class BitacoraService {
         );
       });
     } catch (error) {
-      console.error('[BitacoraService] Error persistiendo sesión de app:', error);
+      console.error(
+        '[BitacoraService] Error persistiendo sesión de app:',
+        error,
+      );
     }
   }
 
@@ -775,7 +770,10 @@ class BitacoraService {
     try {
       await this.persistSesionAppIfNeeded();
     } catch (error) {
-      console.warn('[BitacoraService] Error persistiendo sesión de app:', error);
+      console.warn(
+        '[BitacoraService] Error persistiendo sesión de app:',
+        error,
+      );
     }
 
     if (this.pendingAppEvents.length === 0) {
@@ -792,7 +790,10 @@ class BitacoraService {
         }
       });
     } catch (error) {
-      console.warn('[BitacoraService] Error enviando eventos pendientes:', error);
+      console.warn(
+        '[BitacoraService] Error enviando eventos pendientes:',
+        error,
+      );
     }
   }
 
@@ -856,10 +857,7 @@ class BitacoraService {
         }
       });
     } catch (error) {
-      console.warn(
-        '[BitacoraService] Error actualizando sesión de app',
-        error,
-      );
+      console.warn('[BitacoraService] Error actualizando sesión de app', error);
     }
   }
 
@@ -1003,7 +1001,10 @@ class BitacoraService {
         this.realm!.create('BitacoraAppEvento', record, UpdateMode.Modified);
       });
     } catch (error) {
-      console.error('[BitacoraService] Error registrando evento de app:', error);
+      console.error(
+        '[BitacoraService] Error registrando evento de app:',
+        error,
+      );
     }
 
     return id;
@@ -1435,14 +1436,14 @@ class BitacoraService {
         );
         this.realm!.delete(sesionesAntiguas);
 
-        const sesionesAppAntiguas = this.realm!
-          .objects('BitacoraAppSesion')
-          .filtered('fechaInicio < $0', sieteDiasAtras);
+        const sesionesAppAntiguas = this.realm!.objects(
+          'BitacoraAppSesion',
+        ).filtered('fechaInicio < $0', sieteDiasAtras);
         this.realm!.delete(sesionesAppAntiguas);
 
-        const eventosAppAntiguos = this.realm!
-          .objects('BitacoraAppEvento')
-          .filtered('fecha < $0', sieteDiasAtras);
+        const eventosAppAntiguos = this.realm!.objects(
+          'BitacoraAppEvento',
+        ).filtered('fecha < $0', sieteDiasAtras);
         this.realm!.delete(eventosAppAntiguos);
       });
 
