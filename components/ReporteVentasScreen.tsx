@@ -69,12 +69,10 @@ type TicketLine = string;
 export default function ReporteVentasScreen() {
   const today = useMemo(() => {
     const now = new Date();
-    // Convertir a hora de México (UTC-6)
-    const mexicoOffset = -6 * 60; // -6 horas en minutos
-    const localOffset = now.getTimezoneOffset(); // offset actual en minutos
-    const diffMinutes = localOffset - mexicoOffset;
-    const mexicoDate = new Date(now.getTime() - diffMinutes * 60 * 1000);
-    return mexicoDate;
+    // Simple approach: get current time and adjust to Mexico timezone (UTC-6)
+    const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
+    const mexicoTime = new Date(utcTime - 6 * 3600000);
+    return mexicoTime;
   }, []);
   const LOCAL_SALE_ID_THRESHOLD = 1700000000000;
 

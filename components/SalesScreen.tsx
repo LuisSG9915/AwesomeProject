@@ -392,6 +392,8 @@ export default function SalesScreen() {
         )}`,
         [{ text: 'Entendido', style: 'default' }],
       );
+      setProcessingSale(false);
+      setSaleProcessLocked(false);
       return;
     }
 
