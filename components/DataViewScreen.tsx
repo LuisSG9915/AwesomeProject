@@ -8,6 +8,7 @@ import {
   FlatList,
   RefreshControl,
   Alert,
+  TextInput,
 } from 'react-native';
 import { Icon } from 'react-native-elements';
 import FullSyncService from '../services/FullSyncService';
@@ -53,9 +54,11 @@ const ENTITY_TABS: EntityTab[] = [
 export default function DataViewScreen() {
   const [selectedTab, setSelectedTab] = useState<EntityType>('syncLogs');
   const [data, setData] = useState<any[]>([]);
+  const [filteredData, setFilteredData] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   const [refreshing, setRefreshing] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
   const ITEMS_PER_PAGE = 50;
 
   const loadData = useCallback(async () => {
@@ -66,6 +69,7 @@ export default function DataViewScreen() {
       setStats(newStats);
 
       const offset = currentPage * ITEMS_PER_PAGE;
+      const shouldLoadAllData = searchQuery.trim().length > 0;
 
       switch (selectedTab) {
         case 'syncLogs':
@@ -75,11 +79,14 @@ export default function DataViewScreen() {
           });
           const logsRealm = realm
             .objects('SyncLog')
-            .sorted('fechaInicio', true)
-            .slice(offset, offset + ITEMS_PER_PAGE);
+            .sorted('fechaInicio', true);
+
+          const logsToSlice = shouldLoadAllData
+            ? logsRealm
+            : logsRealm.slice(offset, offset + ITEMS_PER_PAGE);
 
           // Convertir objetos de Realm a objetos JavaScript planos
-          const logs = Array.from(logsRealm).map((log: any) => ({
+          const logs = Array.from(logsToSlice).map((log: any) => ({
             id: log.id,
             fechaInicio: log.fechaInicio ? new Date(log.fechaInicio) : null,
             fechaFinal: log.fechaFinal ? new Date(log.fechaFinal) : null,
@@ -96,49 +103,154 @@ export default function DataViewScreen() {
 
           realm.close();
           setData(logs);
+          setFilteredData(logs);
           break;
         case 'ventas':
-          setData(FullSyncService.getVentasPaginated(offset, ITEMS_PER_PAGE));
+          const ventasData = shouldLoadAllData
+            ? FullSyncService.getVentas(999999)
+            : FullSyncService.getVentasPaginated(offset, ITEMS_PER_PAGE);
+          setData(ventasData);
+          setFilteredData(ventasData);
           break;
         case 'usuarios':
-          setData(FullSyncService.getUsuariosPaginated(offset, ITEMS_PER_PAGE));
+          const usuariosData = shouldLoadAllData
+            ? FullSyncService.getUsuarios(999999)
+            : FullSyncService.getUsuariosPaginated(offset, ITEMS_PER_PAGE);
+          setData(usuariosData);
+          setFilteredData(usuariosData);
           break;
         case 'productos':
-          setData(
-            FullSyncService.getProductosPaginated(offset, ITEMS_PER_PAGE),
-          );
+          const productosData = shouldLoadAllData
+            ? FullSyncService.getProductos(999999)
+            : FullSyncService.getProductosPaginated(offset, ITEMS_PER_PAGE);
+          setData(productosData);
+          setFilteredData(productosData);
           break;
         case 'precios':
-          setData(FullSyncService.getPreciosPaginated(offset, ITEMS_PER_PAGE));
+          const preciosData = shouldLoadAllData
+            ? FullSyncService.getPrecios(999999)
+            : FullSyncService.getPreciosPaginated(offset, ITEMS_PER_PAGE);
+          setData(preciosData);
+          setFilteredData(preciosData);
           break;
         case 'inventario':
-          setData(
-            FullSyncService.getInventarioPaginated(offset, ITEMS_PER_PAGE),
-          );
+          const inventarioData = shouldLoadAllData
+            ? FullSyncService.getInventario(999999)
+            : FullSyncService.getInventarioPaginated(offset, ITEMS_PER_PAGE);
+          setData(inventarioData);
+          setFilteredData(inventarioData);
           break;
         case 'cartera':
-          setData(FullSyncService.getCarteraPaginated(offset, ITEMS_PER_PAGE));
+          const carteraData = shouldLoadAllData
+            ? FullSyncService.getCartera(999999)
+            : FullSyncService.getCarteraPaginated(offset, ITEMS_PER_PAGE);
+          setData(carteraData);
+          setFilteredData(carteraData);
           break;
         case 'clientes':
-          setData(
-            FullSyncService.getClientesFullPaginated(offset, ITEMS_PER_PAGE),
-          );
+          const clientesData = shouldLoadAllData
+            ? FullSyncService.getClientesFull(999999)
+            : FullSyncService.getClientesFullPaginated(offset, ITEMS_PER_PAGE);
+          setData(clientesData);
+          setFilteredData(clientesData);
           break;
         case 'bitacora':
-          setData(
-            FullSyncService.getSyncTableLogsPaginated(offset, ITEMS_PER_PAGE),
-          );
+          // Para bitácora, necesitamos verificar si hay un método que obtenga todos los datos
+          const bitacoraData = shouldLoadAllData
+            ? FullSyncService.getSyncTableLogsPaginated(0, 999999)
+            : FullSyncService.getSyncTableLogsPaginated(offset, ITEMS_PER_PAGE);
+          setData(bitacoraData);
+          setFilteredData(bitacoraData);
           break;
       }
     } catch (error) {
       console.error('Error al cargar datos:', error);
       Alert.alert('Error', 'No se pudieron cargar los datos');
     }
-  }, [selectedTab, currentPage]);
+  }, [selectedTab, currentPage, searchQuery]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Search filtering logic
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredData(data);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = data.filter((item: any) => {
+      switch (selectedTab) {
+        case 'ventas':
+          return (
+            item.id?.toString().includes(query) ||
+            item.noVenta?.toString().includes(query) ||
+            item.nombreCliente?.toLowerCase().includes(query) ||
+            item.nombreProducto?.toLowerCase().includes(query) ||
+            item.vendedor?.toLowerCase().includes(query)
+          );
+        case 'clientes':
+          return (
+            item.id?.toString().includes(query) ||
+            item.nombre?.toLowerCase().includes(query) ||
+            item.idGrupo?.toString().includes(query)
+          );
+        case 'productos':
+          return (
+            item.id?.toString().includes(query) ||
+            item.descripcion?.toLowerCase().includes(query) ||
+            item.claveProd?.toLowerCase().includes(query)
+          );
+        case 'precios':
+          return (
+            item.id?.toString().includes(query) ||
+            item.descripcion?.toLowerCase().includes(query) ||
+            // item.claveProd?.toLowerCase().includes(query) ||
+            item.idCliente?.toString().includes(query)
+          );
+        case 'inventario':
+          return (
+            item.id?.toString().includes(query) ||
+            item.claveProd?.toLowerCase().includes(query) ||
+            item.sucursal?.toString().includes(query)
+          );
+        case 'cartera':
+          return (
+            item.id?.toString().includes(query) ||
+            item.nombreCliente?.toLowerCase().includes(query) ||
+            item.idCliente?.toString().includes(query) ||
+            item.noVenta?.toString().includes(query)
+          );
+        case 'usuarios':
+          return (
+            item.id?.toString().includes(query) ||
+            item.nombre?.toLowerCase().includes(query) ||
+            item.claveEmpleado?.toLowerCase().includes(query) ||
+            item.descripcionPerfil?.toLowerCase().includes(query)
+          );
+        case 'syncLogs':
+          return (
+            item.id?.toString().includes(query) ||
+            item.usuario?.toLowerCase().includes(query) ||
+            item.sucursal?.toLowerCase().includes(query) ||
+            item.ruta?.toLowerCase().includes(query) ||
+            item.tipo?.toLowerCase().includes(query)
+          );
+        case 'bitacora':
+          return (
+            item.id?.toString().includes(query) ||
+            item.tabla?.toLowerCase().includes(query) ||
+            item.endpoint?.toLowerCase().includes(query)
+          );
+        default:
+          return false;
+      }
+    });
+
+    setFilteredData(filtered);
+  }, [searchQuery, data, selectedTab]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -149,6 +261,7 @@ export default function DataViewScreen() {
   const handleTabChange = (tab: EntityType) => {
     setSelectedTab(tab);
     setCurrentPage(0);
+    setSearchQuery('');
   };
 
   const handleNextPage = () => {
@@ -166,6 +279,7 @@ export default function DataViewScreen() {
   };
 
   const handleDelete = async (id: number | string, type: EntityType) => {
+    return;
     Alert.alert(
       'Confirmar eliminación',
       `¿Estás seguro de que deseas eliminar este registro?`,
@@ -228,6 +342,7 @@ export default function DataViewScreen() {
   };
 
   const handleDeleteAll = async () => {
+    return;
     const count = getCount();
     if (count === 0) {
       Alert.alert('Información', 'No hay registros para eliminar');
@@ -347,39 +462,46 @@ export default function DataViewScreen() {
   );
 
   const renderCliente = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{item.nombre}</Text>
-          <Text style={styles.cardSubtitle}>ID: {item.id}</Text>
+    <TouchableOpacity onPress={() => consoleRealm('cliente', item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{item.nombre}</Text>
+            <Text style={styles.cardSubtitle}>ID: {item.id}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => handleDelete(item.id, 'clientes')}
+            style={styles.deleteButton}
+          >
+            <Icon
+              name="delete"
+              type="material"
+              color={COLORS.error}
+              size={24}
+            />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => handleDelete(item.id, 'clientes')}
-          style={styles.deleteButton}
-        >
-          <Icon name="delete" type="material" color={COLORS.error} size={24} />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
-        <Text style={styles.cardText}>
-          Crédito: {item.credito ? 'Sí' : 'No'}
-        </Text>
-        <Text style={styles.cardText}>
-          Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
-        </Text>
-        {item.latitud && item.longitud ? (
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>Grupo: {item.idGrupo || 'N/A'}</Text>
           <Text style={styles.cardText}>
-            Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
+            Crédito: {item.credito ? 'Sí' : 'No'}
           </Text>
-        ) : null}
-        {item.syncedAr && (
           <Text style={styles.cardText}>
-            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            Facturación móvil: {item.facturacionMovil ? 'Sí' : 'No'}
           </Text>
-        )}
+          {item.latitud && item.longitud ? (
+            <Text style={styles.cardText}>
+              Ubicación: {item.latitud.toFixed(4)}, {item.longitud.toFixed(4)}
+            </Text>
+          ) : null}
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderProducto = ({ item }: { item: any }) => (
@@ -800,7 +922,9 @@ export default function DataViewScreen() {
       {/* Stats Summary */}
       <View style={styles.statsContainer}>
         <Text style={styles.statsText}>
-          Mostrando {data.length} de {getCount()} registros
+          Mostrando {filteredData.length} de {getCount()} registros
+          {searchQuery &&
+            ` (${filteredData.length < data.length ? 'filtrados' : 'todos'})`}
         </Text>
         {getCount() > 0 && (
           <TouchableOpacity
@@ -813,70 +937,106 @@ export default function DataViewScreen() {
         )}
       </View>
 
-      {/* Pagination Controls */}
-      <View style={styles.paginationContainer}>
-        <TouchableOpacity
-          style={[
-            styles.paginationButton,
-            currentPage === 0 && styles.paginationButtonDisabled,
-          ]}
-          onPress={handlePreviousPage}
-          disabled={currentPage === 0}
-        >
+      {/* Search Input */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
           <Icon
-            name="chevron-left"
+            name="search"
             type="material"
-            color={currentPage === 0 ? COLORS.textSecondary : '#fff'}
+            color={COLORS.textSecondary}
             size={20}
+            style={styles.searchIcon}
           />
-          <Text
-            style={[
-              styles.paginationButtonText,
-              currentPage === 0 && { color: COLORS.textSecondary },
-            ]}
-          >
-            Anterior
-          </Text>
-        </TouchableOpacity>
-        <Text style={styles.paginationInfo}>
-          Página {currentPage + 1} de{' '}
-          {Math.ceil(getCount() / ITEMS_PER_PAGE) || 1}
-        </Text>
-        <TouchableOpacity
-          style={[
-            styles.paginationButton,
-            currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1 &&
-              styles.paginationButtonDisabled,
-          ]}
-          onPress={handleNextPage}
-          disabled={currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1}
-        >
-          <Text
-            style={[
-              styles.paginationButtonText,
-              currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1 && {
-                color: COLORS.textSecondary,
-              },
-            ]}
-          >
-            Siguiente
-          </Text>
-          <Icon
-            name="chevron-right"
-            type="material"
-            color={
-              currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1
-                ? COLORS.textSecondary
-                : '#fff'
-            }
-            size={20}
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar por ID, descripción, nombre..."
+            placeholderTextColor={COLORS.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
           />
-        </TouchableOpacity>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              style={styles.clearButton}
+            >
+              <Icon
+                name="close"
+                type="material"
+                color={COLORS.textSecondary}
+                size={20}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+
+      {/* Pagination Controls - Solo mostrar cuando no hay búsqueda */}
+      {!searchQuery && (
+        <View style={styles.paginationContainer}>
+          <TouchableOpacity
+            style={[
+              styles.paginationButton,
+              currentPage === 0 && styles.paginationButtonDisabled,
+            ]}
+            onPress={handlePreviousPage}
+            disabled={currentPage === 0}
+          >
+            <Icon
+              name="chevron-left"
+              type="material"
+              color={currentPage === 0 ? COLORS.textSecondary : '#fff'}
+              size={20}
+            />
+            <Text
+              style={[
+                styles.paginationButtonText,
+                currentPage === 0 && { color: COLORS.textSecondary },
+              ]}
+            >
+              Anterior
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.paginationInfo}>
+            Página {currentPage + 1} de{' '}
+            {Math.ceil(getCount() / ITEMS_PER_PAGE) || 1}
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.paginationButton,
+              currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1 &&
+                styles.paginationButtonDisabled,
+            ]}
+            onPress={handleNextPage}
+            disabled={currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1}
+          >
+            <Text
+              style={[
+                styles.paginationButtonText,
+                currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1 && {
+                  color: COLORS.textSecondary,
+                },
+              ]}
+            >
+              Siguiente
+            </Text>
+            <Icon
+              name="chevron-right"
+              type="material"
+              color={
+                currentPage >= Math.ceil(getCount() / ITEMS_PER_PAGE) - 1
+                  ? COLORS.textSecondary
+                  : '#fff'
+              }
+              size={20}
+            />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Data List */}
       <FlatList
-        data={data}
+        data={filteredData}
         renderItem={renderItem}
         keyExtractor={(item, index) => `${selectedTab}-${item.id || index}`}
         contentContainerStyle={styles.listContent}
@@ -898,9 +1058,15 @@ export default function DataViewScreen() {
                 color={COLORS.muted}
                 style={{ marginBottom: 16 }}
               />
-              <Text style={styles.emptyText}>No hay datos sincronizados</Text>
+              <Text style={styles.emptyText}>
+                {searchQuery
+                  ? 'No se encontraron resultados'
+                  : 'No hay datos sincronizados'}
+              </Text>
               <Text style={styles.emptySubtext}>
-                Inicia sesión nuevamente para sincronizar
+                {searchQuery
+                  ? 'Intenta con otra búsqueda'
+                  : 'Inicia sesión nuevamente para sincronizar'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -1115,5 +1281,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textSecondary,
+  },
+  searchContainer: {
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.m,
+    paddingVertical: SPACING.s,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.s,
+  },
+  searchIcon: {
+    marginRight: SPACING.s,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+    paddingVertical: SPACING.s,
+  },
+  clearButton: {
+    padding: SPACING.xs,
+    marginLeft: SPACING.s,
   },
 });

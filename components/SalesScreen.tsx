@@ -156,7 +156,7 @@ export default function SalesScreen() {
             existencia,
           };
         })
-        .filter((p: Producto) => p.existencia > 0); // Solo productos con existencia
+        .filter((p: Producto) => p.existencia >= 0); // Solo productos con existencia
 
       setProductos(productosFormateados);
       setFilteredProductos(productosFormateados);
@@ -292,7 +292,7 @@ export default function SalesScreen() {
             existencia,
           };
         })
-        .filter((p: Producto) => p.precio > 0); // Solo productos con precio asignado
+        .filter((p: Producto) => p.existencia >= 0);
 
       setProductos(productosFormateados);
       setFilteredProductos(productosFormateados);
@@ -494,10 +494,10 @@ export default function SalesScreen() {
 
         console.log('[Sales] Intentando arrastre con timeout de 3 segundos...');
 
-        const arrastrePromise = FullSyncService.sendPendingVentasToServer(
-          sucursal,
-          idUsuario,
-        );
+        // const arrastrePromise = FullSyncService.sendPendingVentasToServer(
+        //   sucursal,
+        //   idUsuario,
+        // );
 
         const timeoutPromise = new Promise<{ success: false; error: string }>(
           resolve => {
@@ -510,27 +510,27 @@ export default function SalesScreen() {
           },
         );
 
-        const result = await Promise.race([arrastrePromise, timeoutPromise]);
+        // const result = await Promise.race([arrastrePromise, timeoutPromise]);
 
-        if (result.success) {
-          console.log('[Sales] Arrastre completado exitosamente', result.sent);
-        } else {
-          console.warn('[Sales] Arrastre omitido o falló:', result.error);
-          // Programar sincronización en background
-          setTimeout(() => {
-            console.log('[Sales] Ejecutando sincronización en background...');
-            syncPendingSalesInBackground();
-          }, 500);
-        }
+        // if (result.success) {
+        //   console.log('[Sales] Arrastre completado exitosamente', result.sent);
+        // } else {
+        //   console.warn('[Sales] Arrastre omitido o falló:', result.error);
+        //   // Programar sincronización en background
+        //   setTimeout(() => {
+        //     console.log('[Sales] Ejecutando sincronización en background...');
+        //     syncPendingSalesInBackground();
+        //   }, 500);
+        // }
       } catch (arrastreError) {
         console.error('[Sales] Error en arrastre', arrastreError);
         // Programar sincronización en background
-        setTimeout(() => {
-          console.log(
-            '[Sales] Ejecutando sincronización en background tras error...',
-          );
-          syncPendingSalesInBackground();
-        }, 500);
+        // setTimeout(() => {
+        //   console.log(
+        //     '[Sales] Ejecutando sincronización en background tras error...',
+        //   );
+        //   syncPendingSalesInBackground();
+        // }, 500);
       }
 
       // Actualizar estado de impresora

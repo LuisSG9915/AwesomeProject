@@ -202,9 +202,9 @@ class DeviceInfoService {
     try {
       // Idealmente usar react-native-device-info para obtener la versión real
       // Por ahora retornamos un valor placeholder
-      return '1.0.0';
+      return '1.1.0';
     } catch (error) {
-      return '1.0.0';
+      return '1.1.0';
     }
   }
 
@@ -219,7 +219,9 @@ class DeviceInfoService {
   }> {
     // Si NetInfo no está disponible, retornar valores por defecto
     if (!netInfoAvailable || !NetInfo) {
-      console.warn('[DeviceInfoService] NetInfo no disponible, usando valores por defecto');
+      console.warn(
+        '[DeviceInfoService] NetInfo no disponible, usando valores por defecto',
+      );
       return {
         isConnected: true, // Asumir conectado para no bloquear la app
         type: 'unknown',

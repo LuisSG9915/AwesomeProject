@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Icon } from 'react-native-elements';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -509,8 +510,133 @@ export default function ReporteVentasScreen() {
     const lines = generateTicket(row);
     await TicketPrinter.print(lines, 'Ticket de Venta');
   };
+  const [flagFactura, setFlagFactura] = useState(false);
+  const [loadingFactura, setLoadingFactura] = useState(false);
+  const [loadingCorreo, setLoadingCorreo] = useState(false);
+
+  const enviarCorreoFactura = async (row: ReporteItem | GroupedSale) => {
+    if (loadingCorreo) {
+      console.warn('[ReporteVentas] Envío de correo ya en proceso - BLOQUEADO');
+      return;
+    }
+
+    setLoadingCorreo(true);
+    console.log('[ReporteVentas] Iniciando envío de correo de factura...');
+
+    try {
+      const noVenta = row.no_venta;
+      const sucursal = row.sucursal;
+      const cveCliente = row.cve_cliente;
+      const folioFactura = row.folioFactura;
+      const timbrado =
+        'timbrado' in row ? (row as ReporteItem).timbrado : undefined;
+
+      // Verificar que tenga factura
+      if (!folioFactura && timbrado !== '1') {
+        Alert.alert(
+          'Sin Factura',
+          'Esta venta no tiene factura generada. Primero debe facturar la venta.',
+        );
+        return;
+      }
+
+      if (!noVenta || !sucursal) {
+        Alert.alert('Error', 'Información de venta incompleta');
+        return;
+      }
+
+      // Obtener serie y folio de la factura
+      await FullSyncService.initialize();
+      const cliente = FullSyncService.getClienteFullById
+        ? FullSyncService.getClienteFullById(cveCliente || 0)
+        : null;
+
+      const correoCliente = (cliente as any)?.correoFactura || null;
+
+      if (!correoCliente) {
+        Alert.alert(
+          'Sin Correo',
+          'El cliente no tiene correo de facturación registrado.',
+        );
+        return;
+      }
+
+      console.log('[ReporteVentas] Obteniendo serie/folio de factura...');
+
+      // Llamar al endpoint para obtener serie y folio
+      const cppApiBaseUrl = 'https://cbinfo.no-ip.info:9011';
+      const url = `${cppApiBaseUrl}/api/Cpp/serie-xml?noVenta=${noVenta}&sucursal=${sucursal}&caja=2`;
+
+      const response = await fetch(url, {
+        headers: { accept: 'application/octet-stream' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error al obtener serie/folio: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[ReporteVentas] Serie/Folio/XML obtenidos:', {
+        serie: data.serie,
+        caja: data.caja,
+        hasXml: !!data.xml,
+        xmlLength: data.xml?.length,
+      });
+
+      if (!data || !data.serie) {
+        throw new Error('No se pudo obtener la serie de la factura');
+      }
+
+      if (!data.xml) {
+        throw new Error('No se pudo obtener el XML de la factura');
+      }
+
+      const serie = String(data.serie);
+      const folio = data.caja?.toString?.() || data.folio?.toString?.() || '0';
+      const xmlContent = data.xml;
+
+      console.log('[ReporteVentas] Enviando correo...', {
+        serie,
+        folio,
+        correoCliente,
+        xmlLength: xmlContent.length,
+      });
+
+      // Enviar correo con XML ya obtenido
+      const resultado =
+        await FacturaService.getInstance().enviarFacturaPorCorreoConXml(
+          serie,
+          folio,
+          correoCliente,
+          xmlContent,
+        );
+
+      if (resultado) {
+        console.log('[ReporteVentas] ✅ Correo enviado exitosamente');
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || 'Error al enviar correo';
+      console.error('[ReporteVentas] Error en enviarCorreoFactura:', error);
+      Alert.alert('Error al Enviar Correo', errorMsg);
+    } finally {
+      setTimeout(() => {
+        setLoadingCorreo(false);
+        console.log('[ReporteVentas] Flag de correo liberado');
+      }, 500);
+    }
+  };
 
   const facturarVenta = async (row: ReporteItem | GroupedSale) => {
+    // GUARD 1: Prevenir doble clic con flag local
+    if (flagFactura) {
+      console.warn('[ReporteVentas] Facturación ya en proceso - BLOQUEADO');
+      return;
+    }
+
+    setFlagFactura(true);
+    setLoadingFactura(true);
+    console.log('[ReporteVentas] Iniciando proceso de facturación...');
+
     try {
       // Normalizar datos para soportar ReporteItem y GroupedSale
       const noVenta = row.no_venta;
@@ -522,7 +648,7 @@ export default function ReporteVentasScreen() {
         'timbrado' in row ? (row as ReporteItem).timbrado : undefined;
       const facturacionMovil = row.facturacionMovil;
 
-      // Si ya tiene folio/timbrado, reimprimir CFDI
+      // PRIMERO: Si ya tiene folio/timbrado, reimprimir CFDI (permitir siempre)
       if (folioFactura || timbrado === '1') {
         if (!noVenta || !sucursal) {
           Alert.alert(
@@ -532,13 +658,38 @@ export default function ReporteVentasScreen() {
           return;
         }
 
+        console.log('[ReporteVentas] Reimprimiendo factura existente...');
         await FacturaService.getInstance().imprimirFacturaExistente(
           noVenta,
           sucursal,
           2,
           () => loadVentas(),
         );
+        console.log('[ReporteVentas] Reimpresión completada');
         return;
+      }
+
+      // GUARD 2: Verificar en Realm si ya tiene folioFactura (solo para nuevas facturas)
+      if (noVenta && sucursal) {
+        try {
+          await FullSyncService.initialize();
+          const ventaRealm = FullSyncService.getVentaById
+            ? FullSyncService.getVentaById(noVenta, sucursal)
+            : null;
+
+          if (ventaRealm && (ventaRealm as any).folioFactura === true) {
+            console.warn(
+              '[ReporteVentas] Venta ya facturada según Realm - BLOQUEADO',
+            );
+            Alert.alert(
+              'Venta ya facturada',
+              'Esta venta ya tiene folio de factura registrado en la base de datos local.',
+            );
+            return;
+          }
+        } catch (realmError) {
+          console.error('[ReporteVentas] Error verificando Realm:', realmError);
+        }
       }
 
       // Si está marcada para facturación móvil, generar factura
@@ -554,17 +705,27 @@ export default function ReporteVentasScreen() {
           idCliente: cveCliente,
           idGrupo: 0,
           sucursal: sucursal,
-          caja: 1,
+          caja: 2,
           noVenta: noVenta,
           formaPago: '03', // Transferencia electrónica
           metodoPago: 'PUE', // Pago en una sola exhibición
           usoCFDI: 'G03', // Gastos en general
         };
 
+        console.log('[ReporteVentas] Generando nueva factura...', {
+          noVenta,
+          sucursal,
+          cveCliente,
+          fechaFactura,
+        });
+
         const result = await FacturaService.getInstance().generarFactura(
           [facturaItem],
           fechaFactura,
           () => {
+            console.log(
+              '[ReporteVentas] Actualizando estado local tras facturación exitosa',
+            );
             setItems(prev =>
               prev.map(i =>
                 i.no_venta === noVenta && i.sucursal === sucursal
@@ -583,12 +744,15 @@ export default function ReporteVentasScreen() {
           },
         );
 
-        // Si hubo error, ya se mostró en el servicio
+        // CRÍTICO: Solo liberar flag si la facturación fue exitosa
         if (!result.success) {
-          console.log(
+          console.error(
             '[ReporteVentas] Error al generar factura:',
             result.error,
           );
+          // El flag se liberará en el finally
+        } else {
+          console.log('[ReporteVentas] ✅ Factura generada exitosamente');
         }
         return;
       }
@@ -600,8 +764,15 @@ export default function ReporteVentasScreen() {
     } catch (error: any) {
       const errorMsg =
         error?.message || 'Ocurrió un error al manejar la factura';
-      console.error('[ReporteVentas] Error en facturarVenta:', error);
+      console.error('[ReporteVentas] Exception en facturarVenta:', error);
       Alert.alert('Error al Facturar', errorMsg);
+    } finally {
+      // Liberar flag con delay para evitar doble clic inmediato
+      setTimeout(() => {
+        setFlagFactura(false);
+        setLoadingFactura(false);
+        console.log('[ReporteVentas] Flag de facturación liberado');
+      }, 500);
     }
   };
 
@@ -613,6 +784,13 @@ export default function ReporteVentasScreen() {
           <Icon name="refresh" type="material" color="#fff" size={20} />
         </TouchableOpacity>
       </View>
+
+      {loadingFactura && (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Procesando factura...</Text>
+        </View>
+      )}
 
       {allVentas.length > 0 && (
         <View style={styles.infoCard}>
@@ -797,10 +975,12 @@ export default function ReporteVentasScreen() {
                     <Text style={styles.invTitle}>
                       #{group.no_venta} • {group.nombre}
                     </Text>
-                    <Text style={styles.muted}>
-                      {new Date(group.fecha).toLocaleString('es-MX')} •{' '}
-                      {group.tipoPago}
-                    </Text>
+                    <TouchableOpacity onPress={i => console.log(group)}>
+                      <Text style={styles.muted}>
+                        {new Date(group.fecha).toLocaleString('es-MX')} •{' '}
+                        {group.tipoPago}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     <Text style={styles.money}>
@@ -832,20 +1012,48 @@ export default function ReporteVentasScreen() {
                       <TouchableOpacity
                         onPress={() => facturarVenta(group)}
                         disabled={
-                          !group.folioFactura && !group.facturacionMovil
+                          (!group.folioFactura && !group.facturacionMovil) ||
+                          flagFactura
                         }
                         style={styles.iconBtn}
                       >
-                        <Icon
-                          name={group.folioFactura ? 'print' : 'request-quote'}
-                          type="material"
-                          color={
-                            !group.folioFactura && !group.facturacionMovil
-                              ? COLORS.muted
-                              : COLORS.success
-                          }
-                          size={20}
-                        />
+                        {loadingFactura ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={COLORS.primary}
+                          />
+                        ) : (
+                          <Icon
+                            name={
+                              group.folioFactura ? 'print' : 'request-quote'
+                            }
+                            type="material"
+                            color={
+                              !group.folioFactura && !group.facturacionMovil
+                                ? COLORS.muted
+                                : COLORS.success
+                            }
+                            size={20}
+                          />
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => enviarCorreoFactura(group)}
+                        disabled={!group.folioFactura || loadingCorreo}
+                        style={styles.iconBtn}
+                      >
+                        {loadingCorreo ? (
+                          <ActivityIndicator size="small" color={COLORS.info} />
+                        ) : (
+                          <Icon
+                            name="email"
+                            type="material"
+                            color={
+                              !group.folioFactura ? COLORS.muted : COLORS.info
+                            }
+                            size={20}
+                          />
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -948,6 +1156,24 @@ const styles = StyleSheet.create({
     color: COLORS.primaryDark,
     fontSize: 14,
     fontWeight: '600',
+  },
+  loadingCard: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.l,
+    marginBottom: SPACING.m,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.m,
+    ...SHADOWS.medium,
+  },
+  loadingText: {
+    color: COLORS.primaryDark,
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: SPACING.m,
   },
   warningCard: {
     backgroundColor: '#FFF3E0',

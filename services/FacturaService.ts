@@ -69,7 +69,7 @@ class FacturaService {
       const cliente = FullSyncService.getClienteFullById
         ? FullSyncService.getClienteFullById(item.idCliente)
         : null;
-
+      console.log({ cliente });
       item.idGrupo = (cliente && (cliente as any).idGrupo) || 0;
       const correoCliente = (cliente as any)?.correoFactura || null;
 
@@ -77,7 +77,7 @@ class FacturaService {
         idCliente: item.idCliente,
         existeCliente: !!cliente,
         idGrupo: item.idGrupo,
-        tieneCorreoFactura: !!correoCliente,
+        tieneCorreoFactura: correoCliente,
       });
 
       // Determinar endpoint según idGrupo
@@ -135,7 +135,7 @@ class FacturaService {
         },
         body: JSON.stringify(xmlContent),
       });
-
+      console.log(xmlContent);
       // Intentar obtener respuesta como texto primero para debug
       const responseText = await response.text();
       let data: any = null;
@@ -272,47 +272,60 @@ class FacturaService {
   }
 
   /**
-   * Envía la factura por correo electrónico con PDF y XML adjuntos
+   * Envía la factura por correo electrónico con PDF y XML adjuntos (con XML ya obtenido)
    */
-  async enviarFacturaPorCorreo(
+  async enviarFacturaPorCorreoConXml(
     serie: string,
     folio: string,
     correoDestino: string,
+    xmlContent: string,
   ): Promise<boolean> {
     try {
-      console.log('[FacturaService] Enviando factura por correo...', {
+      console.log('[FacturaService] Enviando factura por correo (con XML)...', {
         serie,
         folio,
         correoDestino,
+        xmlLength: xmlContent.length,
       });
 
-      // Obtener XML de la factura
-      const xmlResponse = await fetch(
-        `${this.cppApiBaseUrl}/api/Cpp/xml-cfdi?serie=${encodeURIComponent(
-          serie,
-        )}&folio=${encodeURIComponent(folio)}`,
-        { headers: { accept: 'application/xml' } },
+      console.log(
+        '[FacturaService] XML recibido, longitud:',
+        xmlContent.length,
       );
 
-      if (!xmlResponse.ok) {
-        throw new Error('No se pudo obtener el XML de la factura');
-      }
-
-      const xmlContent = await xmlResponse.text();
       const xmlBase64 = this.base64Encode(xmlContent);
+      console.log(
+        '[FacturaService] XML codificado en base64, longitud:',
+        xmlBase64.length,
+      );
 
       // Obtener PDF de la factura
-      const pdfResponse = await fetch(
-        `${this.cppApiBaseUrl}/api/Cpp/pdf-cfdi?serie=${encodeURIComponent(
-          serie,
-        )}&folio=${encodeURIComponent(folio)}`,
-        { headers: { accept: 'application/pdf' } },
-      );
+      const pdfUrl = `${
+        this.cppApiBaseUrl
+      }/api/Cpp/pdf-cfdi?serie=${encodeURIComponent(
+        serie,
+      )}&folio=${encodeURIComponent(folio)}`;
+      console.log('[FacturaService] URL PDF:', pdfUrl);
+
+      const pdfResponse = await fetch(pdfUrl, {
+        headers: { accept: 'application/pdf' },
+      });
+
+      console.log('[FacturaService] PDF Response status:', pdfResponse.status);
 
       let pdfBase64 = '';
       if (pdfResponse.ok) {
         const pdfBlob = await pdfResponse.blob();
         pdfBase64 = await this.blobToBase64(pdfBlob);
+        console.log(
+          '[FacturaService] PDF codificado en base64, longitud:',
+          pdfBase64.length,
+        );
+      } else {
+        console.warn(
+          '[FacturaService] No se pudo obtener PDF:',
+          pdfResponse.status,
+        );
       }
 
       // Preparar datos del email
@@ -339,22 +352,181 @@ class FacturaService {
         ],
       };
 
+      console.log('[FacturaService] Enviando email con datos:', {
+        to: emailData.to,
+        subject: emailData.subject,
+        attachmentsCount: emailData.Attachments.length,
+        hasPDF: !!pdfBase64,
+      });
+
       const response = await fetch(this.emailApiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emailData),
       });
 
+      console.log('[FacturaService] Email Response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('[FacturaService] Error enviando email:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        });
         throw new Error(errorText || 'Error al enviar correo');
       }
 
+      console.log('[FacturaService] ✅ Correo enviado exitosamente');
       Alert.alert('✅ Correo Enviado', `Factura enviada a ${correoDestino}`);
       return true;
     } catch (error: any) {
       const msg = error?.message || 'No se pudo enviar el correo';
-      console.error('[FacturaService] Error enviando correo:', error);
+      console.error('[FacturaService] ❌ Error enviando correo:', error);
+      console.error('[FacturaService] Error stack:', error?.stack);
+      Alert.alert('Error al Enviar Correo', msg);
+      return false;
+    }
+  }
+
+  /**
+   * Envía la factura por correo electrónico con PDF y XML adjuntos
+   */
+  async enviarFacturaPorCorreo(
+    serie: string,
+    folio: string,
+    correoDestino: string,
+  ): Promise<boolean> {
+    try {
+      console.log('[FacturaService] Enviando factura por correo...', {
+        serie,
+        folio,
+        correoDestino,
+      });
+
+      // Obtener XML de la factura
+      const xmlUrl = `${
+        this.cppApiBaseUrl
+      }/api/Cpp/xml-cfdi?serie=${encodeURIComponent(
+        serie,
+      )}&folio=${encodeURIComponent(folio)}`;
+      console.log('[FacturaService] URL XML:', xmlUrl);
+
+      const xmlResponse = await fetch(xmlUrl, {
+        headers: { accept: 'application/xml' },
+      });
+
+      console.log('[FacturaService] XML Response status:', xmlResponse.status);
+
+      if (!xmlResponse.ok) {
+        const errorText = await xmlResponse.text();
+        console.error('[FacturaService] Error obteniendo XML:', {
+          status: xmlResponse.status,
+          statusText: xmlResponse.statusText,
+          errorText,
+        });
+        throw new Error(
+          `No se pudo obtener el XML de la factura (${xmlResponse.status}): ${errorText}`,
+        );
+      }
+
+      const xmlContent = await xmlResponse.text();
+      console.log(
+        '[FacturaService] XML obtenido, longitud:',
+        xmlContent.length,
+      );
+
+      const xmlBase64 = this.base64Encode(xmlContent);
+      console.log(
+        '[FacturaService] XML codificado en base64, longitud:',
+        xmlBase64.length,
+      );
+
+      // Obtener PDF de la factura
+      const pdfUrl = `${
+        this.cppApiBaseUrl
+      }/api/Cpp/pdf-cfdi?serie=${encodeURIComponent(
+        serie,
+      )}&folio=${encodeURIComponent(folio)}`;
+      console.log('[FacturaService] URL PDF:', pdfUrl);
+
+      const pdfResponse = await fetch(pdfUrl, {
+        headers: { accept: 'application/pdf' },
+      });
+
+      console.log('[FacturaService] PDF Response status:', pdfResponse.status);
+
+      let pdfBase64 = '';
+      if (pdfResponse.ok) {
+        const pdfBlob = await pdfResponse.blob();
+        pdfBase64 = await this.blobToBase64(pdfBlob);
+        console.log(
+          '[FacturaService] PDF codificado en base64, longitud:',
+          pdfBase64.length,
+        );
+      } else {
+        console.warn(
+          '[FacturaService] No se pudo obtener PDF:',
+          pdfResponse.status,
+        );
+      }
+
+      // Preparar datos del email
+      const emailData = {
+        to: `${correoDestino}, soporte@cbinformatica.net`,
+        subject: 'FACTURA ELECTRONICA FRESKY HIELO',
+        body: `Estimado cliente,\n\nAdjunto encontrará su factura ${serie}-${folio}.\n\nGracias por su preferencia.\n\nFRESKY HIELO`,
+        attachmentPath: '',
+        Attachments: [
+          ...(pdfBase64
+            ? [
+                {
+                  FileName: `${serie}-${folio}.pdf`,
+                  FileContent: pdfBase64,
+                  MimeType: 'application/pdf',
+                },
+              ]
+            : []),
+          {
+            FileName: `${serie}-${folio}.xml`,
+            FileContent: xmlBase64,
+            MimeType: 'application/xml',
+          },
+        ],
+      };
+
+      console.log('[FacturaService] Enviando email con datos:', {
+        to: emailData.to,
+        subject: emailData.subject,
+        attachmentsCount: emailData.Attachments.length,
+        hasPDF: !!pdfBase64,
+      });
+
+      const response = await fetch(this.emailApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailData),
+      });
+
+      console.log('[FacturaService] Email Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FacturaService] Error enviando email:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        });
+        throw new Error(errorText || 'Error al enviar correo');
+      }
+
+      console.log('[FacturaService] ✅ Correo enviado exitosamente');
+      Alert.alert('✅ Correo Enviado', `Factura enviada a ${correoDestino}`);
+      return true;
+    } catch (error: any) {
+      const msg = error?.message || 'No se pudo enviar el correo';
+      console.error('[FacturaService] ❌ Error enviando correo:', error);
+      console.error('[FacturaService] Error stack:', error?.stack);
       Alert.alert('Error al Enviar Correo', msg);
       return false;
     }

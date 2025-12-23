@@ -310,7 +310,6 @@ class FullSyncService {
             )}`;
 
             // console.log('[Incremental] Clientes desde', fechaInicial, url);
-
             const response = await fetch(url, {
               headers: { accept: 'application/octet-stream' },
             });
@@ -319,6 +318,8 @@ class FullSyncService {
             }
 
             const clientes = await response.json();
+            console.log({ clientes });
+
             const registrosLeidos = Array.isArray(clientes)
               ? clientes.length
               : 0;
@@ -343,7 +344,7 @@ class FullSyncService {
                   fechaAct: cliente.fecha_act
                     ? new Date(cliente.fecha_act)
                     : null,
-                  correoFactura: cliente.correo_factura || null,
+                  correoFactura: cliente.correoFactura || null,
                   syncedAt: new Date(),
                   syncedAr: nowMexico,
                 };
@@ -1696,6 +1697,19 @@ class FullSyncService {
     return obj || null;
   }
 
+  getVentaById(noVenta: number, sucursal: number): any | null {
+    if (!this.isInitialized || !this.realm) return null;
+    try {
+      const ventas = this.realm
+        .objects('Venta')
+        .filtered('noVenta == $0 AND sucursal == $1', noVenta, sucursal);
+      return ventas.length > 0 ? ventas[0] : null;
+    } catch (error) {
+      console.error('[FullSyncService] Error en getVentaById:', error);
+      return null;
+    }
+  }
+
   getPreciosByCliente(idCliente: number): any[] {
     if (!this.isInitialized || !this.realm) return [];
     return Array.from(
@@ -1842,6 +1856,7 @@ class FullSyncService {
           latitud: cliente?.latitud ?? 0,
           id_movil: venta.idMovil,
           fechaTransfer: new Date().toISOString(),
+          correoFactura: venta.correoFactura ?? '',
         };
       });
 
