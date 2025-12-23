@@ -565,7 +565,7 @@ export default function ReporteVentasScreen() {
 
       // Llamar al endpoint para obtener serie y folio
       const cppApiBaseUrl = 'https://cbinfo.no-ip.info:9011';
-      const url = `${cppApiBaseUrl}/api/Cpp/serie-xml?noVenta=${noVenta}&sucursal=${sucursal}&caja=2`;
+      const url = `${cppApiBaseUrl}/api/Cpp/serie-xml?noVenta=${noVenta}&sucursal=${sucursal}&caja=1`;
 
       const response = await fetch(url, {
         headers: { accept: 'application/octet-stream' },
@@ -617,7 +617,7 @@ export default function ReporteVentasScreen() {
     } catch (error: any) {
       const errorMsg = error?.message || 'Error al enviar correo';
       console.error('[ReporteVentas] Error en enviarCorreoFactura:', error);
-      Alert.alert('Error al Enviar Correo', errorMsg);
+      // Alert.alert('Error al Enviar Correo', errorMsg);
     } finally {
       setTimeout(() => {
         setLoadingCorreo(false);
@@ -705,7 +705,7 @@ export default function ReporteVentasScreen() {
           idCliente: cveCliente,
           idGrupo: 0,
           sucursal: sucursal,
-          caja: 2,
+          caja: 1,
           noVenta: noVenta,
           formaPago: '03', // Transferencia electrónica
           metodoPago: 'PUE', // Pago en una sola exhibición

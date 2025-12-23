@@ -202,16 +202,6 @@ class BluetoothPrinterService {
         return false;
       }
 
-      // Intentar limpiar cualquier conexión previa que haya quedado colgada
-      try {
-        await BluetoothManager.disconnect();
-      } catch (disconnectError) {
-        console.warn(
-          'Error intentando resetear la conexión Bluetooth antes de conectar:',
-          disconnectError,
-        );
-      }
-
       await BluetoothManager.connect(printer.address);
       this.currentPrinter = printer;
       this.isConnected = true;

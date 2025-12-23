@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 import BluetoothPrinterService from './BluetoothPrinterService';
 import FullSyncService from './FullSyncService';
+import PDFFacturaGenerator from './PDFFacturaGenerator';
 
 export interface FacturaItem {
   id: number;
@@ -299,33 +300,18 @@ class FacturaService {
         xmlBase64.length,
       );
 
-      // Obtener PDF de la factura
-      const pdfUrl = `${
-        this.cppApiBaseUrl
-      }/api/Cpp/pdf-cfdi?serie=${encodeURIComponent(
-        serie,
-      )}&folio=${encodeURIComponent(folio)}`;
-      console.log('[FacturaService] URL PDF:', pdfUrl);
-
-      const pdfResponse = await fetch(pdfUrl, {
-        headers: { accept: 'application/pdf' },
-      });
-
-      console.log('[FacturaService] PDF Response status:', pdfResponse.status);
-
+      // Generar PDF desde el XML en el dispositivo móvil
+      console.log('[FacturaService] Generando PDF desde XML...');
       let pdfBase64 = '';
-      if (pdfResponse.ok) {
-        const pdfBlob = await pdfResponse.blob();
-        pdfBase64 = await this.blobToBase64(pdfBlob);
+      try {
+        pdfBase64 = await PDFFacturaGenerator.generatePDF(xmlContent);
         console.log(
-          '[FacturaService] PDF codificado en base64, longitud:',
+          '[FacturaService] PDF generado exitosamente, longitud:',
           pdfBase64.length,
         );
-      } else {
-        console.warn(
-          '[FacturaService] No se pudo obtener PDF:',
-          pdfResponse.status,
-        );
+      } catch (pdfError) {
+        console.error('[FacturaService] Error generando PDF:', pdfError);
+        console.warn('[FacturaService] Continuando sin PDF, solo con XML');
       }
 
       // Preparar datos del email
@@ -384,7 +370,7 @@ class FacturaService {
       const msg = error?.message || 'No se pudo enviar el correo';
       console.error('[FacturaService] ❌ Error enviando correo:', error);
       console.error('[FacturaService] Error stack:', error?.stack);
-      Alert.alert('Error al Enviar Correo', msg);
+      // Alert.alert('Error al Enviar Correo', msg);
       return false;
     }
   }
@@ -527,7 +513,7 @@ class FacturaService {
       const msg = error?.message || 'No se pudo enviar el correo';
       console.error('[FacturaService] ❌ Error enviando correo:', error);
       console.error('[FacturaService] Error stack:', error?.stack);
-      Alert.alert('Error al Enviar Correo', msg);
+      // Alert.alert('Error al Enviar Correo', msg);
       return false;
     }
   }
