@@ -96,25 +96,32 @@ class BackgroundSyncService {
       nextSyncTime: nextSync,
     });
 
-    // TEMPORALMENTE DESHABILITADO - Foreground Service causa crashes
-    // TODO: Habilitar cuando se resuelvan los problemas de permisos
-    /*
+    // Intentar iniciar Foreground Service para sincronización con pantalla apagada
+    // Espera 5 segundos para que la app termine de inicializar completamente
     setTimeout(async () => {
       try {
+        console.log('[BackgroundSync] 🔧 Configurando Foreground Service...');
         ForegroundSyncService.configure({
           intervalMinutes: this.FOREGROUND_INTERVAL_MINUTES,
         });
+        
+        console.log('[BackgroundSync] 🚀 Iniciando Foreground Service...');
+        console.log('[BackgroundSync] ℹ️ Nota: Requiere permisos de notificaciones y Android 14+ con foregroundServiceType');
+        
         await ForegroundSyncService.start();
-        console.log('[BackgroundSync] ✅ Foreground Service iniciado');
-      } catch (error) {
-        console.error('[BackgroundSync] ⚠️ Error iniciando Foreground Service (no crítico):', error);
-        console.warn('[BackgroundSync] La app continuará funcionando sin Foreground Service');
+        console.log('[BackgroundSync] ✅ Foreground Service iniciado exitosamente');
+        console.log('[BackgroundSync] 📱 La sincronización funcionará con pantalla apagada');
+      } catch (error: any) {
+        console.error('[BackgroundSync] ❌ Error iniciando Foreground Service:', error);
+        console.error('[BackgroundSync] Error detalle:', error?.message || 'Sin mensaje');
+        console.error('[BackgroundSync] Error stack:', error?.stack || 'Sin stack trace');
+        console.warn('[BackgroundSync] ⚠️ ForegroundService NO disponible - sincronización solo con app activa');
+        console.warn('[BackgroundSync] ℹ️ La app continuará funcionando normalmente');
+        
+        // NO lanzar error - permitir que la app continúe
+        // El intervalo normal seguirá funcionando
       }
-    }, 3000);
-    */
-    console.log(
-      '[BackgroundSync] ℹ️ Foreground Service deshabilitado temporalmente',
-    );
+    }, 5000); // Esperar 5 segundos en lugar de 3
 
     // Usar intervalo para cuando la app está en primer plano (más preciso)
     this.intervalId = setInterval(() => {
@@ -148,14 +155,15 @@ class BackgroundSyncService {
         console.log('[BackgroundSync] 📱 AppState cambió a:', nextAppState);
 
         if (nextAppState === 'background' || nextAppState === 'inactive') {
-          // App va a background - limpiar intervalo, Foreground Service tomará el control
-          if (this.intervalId) {
-            console.log(
-              `[BackgroundSync] 🌙 App en background - limpiando intervalo, Foreground Service activo (${this.FOREGROUND_INTERVAL_MINUTES} min)`,
-            );
-            clearInterval(this.intervalId);
-            this.intervalId = null;
-          }
+          // App va a background
+          // CAMBIO: NO limpiamos el intervalo porque ForegroundService puede pausarse en background
+          // Dejamos que ambos (intervalo + ForegroundService) corran como respaldo
+          console.log(
+            `[BackgroundSync] 🌙 App en background - intervalo SIGUE ACTIVO como respaldo (${this.SYNC_INTERVAL_MS / 1000}s)`,
+          );
+          console.log(
+            `[BackgroundSync] ℹ️ ForegroundService también activo (${this.FOREGROUND_INTERVAL_MINUTES} min)`,
+          );
         } else if (nextAppState === 'active') {
           // App vuelve a foreground - reiniciar intervalo si no existe
           if (!this.intervalId) {
@@ -176,6 +184,10 @@ class BackgroundSyncService {
             this.updateState({
               nextSyncTime: nextSync,
             });
+          } else {
+            console.log(
+              `[BackgroundSync] ☀️ App en foreground - intervalo ya estaba activo`,
+            );
           }
         }
       },
@@ -291,17 +303,20 @@ class BackgroundSyncService {
       console.log('[BackgroundSync] ℹ️ No hay intervalo activo para detener');
     }
 
-    // Detener Foreground Service (si está habilitado)
-    /*
+    // Detener Foreground Service
     try {
+      console.log('[BackgroundSync] 🔍 Verificando estado de Foreground Service...');
       if (ForegroundSyncService.isActive()) {
+        console.log('[BackgroundSync] 🛑 Deteniendo Foreground Service...');
         await ForegroundSyncService.stop();
-        console.log('[BackgroundSync] 🛑 Foreground Service detenido');
+        console.log('[BackgroundSync] ✅ Foreground Service detenido');
+      } else {
+        console.log('[BackgroundSync] ℹ️ Foreground Service no estaba activo');
       }
-    } catch (error) {
-      console.error('[BackgroundSync] Error deteniendo Foreground Service:', error);
+    } catch (error: any) {
+      console.error('[BackgroundSync] ❌ Error deteniendo Foreground Service:', error);
+      console.error('[BackgroundSync] Error detalle:', error?.message);
     }
-    */
 
     // Limpiar listener de AppState
     if (this.appStateSubscription) {
@@ -493,6 +508,29 @@ class BackgroundSyncService {
         console.warn(
           '[BackgroundSync] ⚠️ Error en arrastre de bitácoras:',
           bitacoraError,
+        );
+      }
+
+      // ARRASTRE DE TRAZABILIDAD: Enviar trazabilidad de clicks de los últimos 7 días
+      try {
+        console.log('[BackgroundSync] 📤 Iniciando arrastre de trazabilidad...');
+        const trazabilidadResult =
+          await FullSyncService.sendPendingTrazabilidadToServer(sucursal, idUsuario);
+        if (trazabilidadResult.success && trazabilidadResult.sent > 0) {
+          console.log(
+            `[BackgroundSync] ✅ Trazabilidad enviada: ${trazabilidadResult.sent}`,
+          );
+        } else if (!trazabilidadResult.success) {
+          console.warn(
+            '[BackgroundSync] ⚠️ Error en arrastre de trazabilidad (no crítico):',
+            trazabilidadResult.error,
+          );
+        }
+      } catch (trazabilidadError) {
+        // No hacer fallar la sincronización por errores de trazabilidad
+        console.warn(
+          '[BackgroundSync] ⚠️ Error en arrastre de trazabilidad:',
+          trazabilidadError,
         );
       }
 

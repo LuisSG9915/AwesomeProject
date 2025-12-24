@@ -14,6 +14,7 @@ import {
 import { Icon, Input } from 'react-native-elements';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import FullSyncService from '../services/FullSyncService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import AuthService, { Usuario } from '../services/AuthService';
 import {
   COLORS,
@@ -354,7 +355,18 @@ export default function TraspasoRecepcionScreen() {
             <Text style={styles.smallLabel}>Desde</Text>
             <TouchableOpacity
               style={styles.dateInput}
-              onPress={() => setShowPicker1(true)}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  {
+                    pantalla: 'TraspasoRecepcionScreen',
+                    accion: 'abrir_fecha_desde',
+                    tipoElemento: 'button',
+                    etiqueta: 'Fecha Desde',
+                  },
+                  { exitoso: true },
+                );
+                setShowPicker1(true);
+              }}
             >
               <Icon
                 name="event"
@@ -370,7 +382,18 @@ export default function TraspasoRecepcionScreen() {
             <Text style={styles.smallLabel}>Hasta</Text>
             <TouchableOpacity
               style={styles.dateInput}
-              onPress={() => setShowPicker2(true)}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  {
+                    pantalla: 'TraspasoRecepcionScreen',
+                    accion: 'abrir_fecha_hasta',
+                    tipoElemento: 'button',
+                    etiqueta: 'Fecha Hasta',
+                  },
+                  { exitoso: true },
+                );
+                setShowPicker2(true);
+              }}
             >
               <Icon
                 name="event"
@@ -417,9 +440,19 @@ export default function TraspasoRecepcionScreen() {
                     styles.pill,
                     formFiltro.sucursal === s.id_sucursal && styles.pillOn,
                   ]}
-                  onPress={() =>
-                    setFormFiltro({ ...formFiltro, sucursal: s.id_sucursal })
-                  }
+                  onPress={() => {
+                    TrazabilidadService.registrarAccionCompleta(
+                      {
+                        pantalla: 'TraspasoRecepcionScreen',
+                        accion: 'seleccionar_sucursal',
+                        tipoElemento: 'button',
+                        etiqueta: s.nombre,
+                        parametros: { sucursalId: s.id_sucursal },
+                      },
+                      { exitoso: true },
+                    );
+                    setFormFiltro({ ...formFiltro, sucursal: s.id_sucursal });
+                  }}
                 >
                   <Text
                     style={[
@@ -434,7 +467,21 @@ export default function TraspasoRecepcionScreen() {
               ))}
           </View>
         </ScrollView>
-        <TouchableOpacity style={styles.secondaryBtn} onPress={onConsultar}>
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={() => {
+            TrazabilidadService.registrarAccionCompleta(
+              {
+                pantalla: 'TraspasoRecepcionScreen',
+                accion: 'consultar_traspasos',
+                tipoElemento: 'button',
+                etiqueta: 'Consultar',
+              },
+              { exitoso: true },
+            );
+            onConsultar();
+          }}
+        >
           <Text style={styles.secondaryBtnText}>Consultar</Text>
         </TouchableOpacity>
       </View>
@@ -472,6 +519,16 @@ export default function TraspasoRecepcionScreen() {
                   <TouchableOpacity
                     style={styles.smallBtn}
                     onPress={() => {
+                      TrazabilidadService.registrarAccionCompleta(
+                        {
+                          pantalla: 'TraspasoRecepcionScreen',
+                          accion: 'ver_detalle',
+                          tipoElemento: 'button',
+                          etiqueta: 'Ver',
+                          parametros: { traspasoId: item.id },
+                        },
+                        { exitoso: true },
+                      );
                       loadTraspasoDetalle(item);
                     }}
                   >
@@ -490,7 +547,18 @@ export default function TraspasoRecepcionScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Visor de Traspaso</Text>
               <TouchableOpacity
-                onPress={() => setModalOpen(false)}
+                onPress={() => {
+                  TrazabilidadService.registrarAccionCompleta(
+                    {
+                      pantalla: 'TraspasoRecepcionScreen',
+                      accion: 'cerrar_modal',
+                      tipoElemento: 'button',
+                      etiqueta: 'Cerrar',
+                    },
+                    { exitoso: true },
+                  );
+                  setModalOpen(false);
+                }}
                 style={styles.closeBtn}
               >
                 <Icon
@@ -565,7 +633,19 @@ export default function TraspasoRecepcionScreen() {
                   selected?.estatus === 'Cancelado') &&
                   styles.primaryBtnDisabled,
               ]}
-              onPress={onRecibir}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  {
+                    pantalla: 'TraspasoRecepcionScreen',
+                    accion: 'recibir_traspaso',
+                    tipoElemento: 'button',
+                    etiqueta: 'Recibir',
+                    parametros: { traspasoId: selected?.id },
+                  },
+                  { exitoso: true },
+                );
+                onRecibir();
+              }}
               disabled={
                 selected?.estatus === 'Finalizado' ||
                 selected?.estatus === 'Cancelado'

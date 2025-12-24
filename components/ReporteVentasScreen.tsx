@@ -16,6 +16,8 @@ import { Icon } from 'react-native-elements';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import TicketPrinter from '../services/TicketPrinter';
 import FullSyncService from '../services/FullSyncService';
+import BluetoothPrinterService from '../services/BluetoothPrinterService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import FacturaService, { FacturaItem } from '../services/FacturaService';
 import AuthService from '../services/AuthService';
 import {
@@ -780,7 +782,21 @@ export default function ReporteVentasScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>Consulta a Ventas</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={loadVentas}>
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={() => {
+            TrazabilidadService.registrarAccionCompleta(
+              {
+                pantalla: 'ReporteVentasScreen',
+                accion: 'refrescar_ventas',
+                tipoElemento: 'button',
+                etiqueta: 'Refrescar',
+              },
+              { exitoso: true },
+            );
+            loadVentas();
+          }}
+        >
           <Icon name="refresh" type="material" color="#fff" size={20} />
         </TouchableOpacity>
       </View>
@@ -845,7 +861,18 @@ export default function ReporteVentasScreen() {
             <Text style={styles.formLabel}>Fecha inicial</Text>
             <TouchableOpacity
               style={styles.dateInput}
-              onPress={() => setShowPicker1(true)}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  {
+                    pantalla: 'ReporteVentasScreen',
+                    accion: 'abrir_fecha_inicio',
+                    tipoElemento: 'button',
+                    etiqueta: 'Fecha Inicio',
+                  },
+                  { exitoso: true },
+                );
+                setShowPicker1(true);
+              }}
             >
               <Icon
                 name="event"
@@ -861,7 +888,18 @@ export default function ReporteVentasScreen() {
             <Text style={styles.formLabel}>Fecha final</Text>
             <TouchableOpacity
               style={styles.dateInput}
-              onPress={() => setShowPicker2(true)}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  {
+                    pantalla: 'ReporteVentasScreen',
+                    accion: 'abrir_fecha_fin',
+                    tipoElemento: 'button',
+                    etiqueta: 'Fecha Fin',
+                  },
+                  { exitoso: true },
+                );
+                setShowPicker2(true);
+              }}
             >
               <Icon
                 name="event"
@@ -880,7 +918,20 @@ export default function ReporteVentasScreen() {
             {Platform.OS === 'ios' && (
               <View style={styles.iosPickerContainer}>
                 <View style={styles.iosPickerHeader}>
-                  <TouchableOpacity onPress={() => setShowPicker1(false)}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      TrazabilidadService.registrarAccionCompleta(
+                        {
+                          pantalla: 'ReporteVentasScreen',
+                          accion: 'cerrar_fecha_inicio',
+                          tipoElemento: 'button',
+                          etiqueta: 'Listo',
+                        },
+                        { exitoso: true },
+                      );
+                      setShowPicker1(false);
+                    }}
+                  >
                     <Text style={styles.iosPickerButton}>Listo</Text>
                   </TouchableOpacity>
                 </View>
@@ -911,7 +962,20 @@ export default function ReporteVentasScreen() {
             {Platform.OS === 'ios' && (
               <View style={styles.iosPickerContainer}>
                 <View style={styles.iosPickerHeader}>
-                  <TouchableOpacity onPress={() => setShowPicker2(false)}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      TrazabilidadService.registrarAccionCompleta(
+                        {
+                          pantalla: 'ReporteVentasScreen',
+                          accion: 'cerrar_fecha_fin',
+                          tipoElemento: 'button',
+                          etiqueta: 'Listo',
+                        },
+                        { exitoso: true },
+                      );
+                      setShowPicker2(false);
+                    }}
+                  >
                     <Text style={styles.iosPickerButton}>Listo</Text>
                   </TouchableOpacity>
                 </View>
@@ -936,7 +1000,18 @@ export default function ReporteVentasScreen() {
         )}
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={consultar}
+          onPress={() => {
+            TrazabilidadService.registrarAccionCompleta(
+              {
+                pantalla: 'ReporteVentasScreen',
+                accion: 'consultar_ventas',
+                tipoElemento: 'button',
+                etiqueta: 'Consultar',
+              },
+              { exitoso: true },
+            );
+            consultar();
+          }}
           disabled={loading}
         >
           <Text style={styles.secondaryBtnText}>
@@ -945,7 +1020,18 @@ export default function ReporteVentasScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.secondaryBtn}
-          onPress={consultarLocal}
+          onPress={() => {
+            TrazabilidadService.registrarAccionCompleta(
+              {
+                pantalla: 'ReporteVentasScreen',
+                accion: 'consultar_local',
+                tipoElemento: 'button',
+                etiqueta: 'Consultar Local',
+              },
+              { exitoso: true },
+            );
+            consultarLocal();
+          }}
           disabled={loading}
         >
           <Text style={styles.secondaryBtnText}>
@@ -988,7 +1074,19 @@ export default function ReporteVentasScreen() {
                     </Text>
                     <View style={styles.actionRow}>
                       <TouchableOpacity
-                        onPress={() => imprimirGroupedTicket(group)}
+                        onPress={() => {
+                          TrazabilidadService.registrarAccionCompleta(
+                            {
+                              pantalla: 'ReporteVentasScreen',
+                              accion: 'imprimir_ticket',
+                              tipoElemento: 'button',
+                              etiqueta: 'Imprimir',
+                              parametros: { ventaId: group.idMovil },
+                            },
+                            { exitoso: true },
+                          );
+                          imprimirGroupedTicket(group);
+                        }}
                         style={styles.iconBtn}
                       >
                         <Icon
@@ -999,7 +1097,19 @@ export default function ReporteVentasScreen() {
                         />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => visualizarGroupedTicket(group)}
+                        onPress={() => {
+                          TrazabilidadService.registrarAccionCompleta(
+                            {
+                              pantalla: 'ReporteVentasScreen',
+                              accion: 'visualizar_ticket',
+                              tipoElemento: 'button',
+                              etiqueta: 'Ver',
+                              parametros: { ventaId: group.idMovil },
+                            },
+                            { exitoso: true },
+                          );
+                          visualizarGroupedTicket(group);
+                        }}
                         style={styles.iconBtn}
                       >
                         <Icon
@@ -1010,7 +1120,19 @@ export default function ReporteVentasScreen() {
                         />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => facturarVenta(group)}
+                        onPress={() => {
+                          TrazabilidadService.registrarAccionCompleta(
+                            {
+                              pantalla: 'ReporteVentasScreen',
+                              accion: 'facturar_venta',
+                              tipoElemento: 'button',
+                              etiqueta: 'Facturar',
+                              parametros: { ventaId: group.idMovil },
+                            },
+                            { exitoso: true },
+                          );
+                          facturarVenta(group);
+                        }}
                         disabled={
                           (!group.folioFactura && !group.facturacionMovil) ||
                           flagFactura
@@ -1101,7 +1223,20 @@ export default function ReporteVentasScreen() {
               <Text style={styles.ticketModalTitle}>
                 Vista Previa del Ticket
               </Text>
-              <TouchableOpacity onPress={() => setTicketVisible(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  TrazabilidadService.registrarAccionCompleta(
+                    {
+                      pantalla: 'ReporteVentasScreen',
+                      accion: 'cerrar_vista_ticket',
+                      tipoElemento: 'button',
+                      etiqueta: 'Cerrar',
+                    },
+                    { exitoso: true },
+                  );
+                  setTicketVisible(false);
+                }}
+              >
                 <Icon
                   name="close"
                   type="material"

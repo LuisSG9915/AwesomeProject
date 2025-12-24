@@ -341,6 +341,55 @@ export const BitacoraAppEventoSchema = {
   primaryKey: 'id',
 };
 
+/**
+ * Schema para trazabilidad de clicks y acciones en la app móvil
+ * Registra cada interacción del usuario con botones y elementos clickeables
+ */
+export const TrazabilidadMovilSchema = {
+  name: 'TrazabilidadMovil',
+  properties: {
+    id: 'string', // UUID único
+    idMovil: 'string', // ID único del dispositivo móvil
+    
+    // Información del usuario
+    idUsuario: 'int?',
+    nombreUsuario: 'string?',
+    sucursal: 'int?',
+    
+    // Información del evento
+    fechaInicio: 'date', // Fecha y hora del click
+    fechaFinal: 'date?', // Fecha y hora de finalización de la acción
+    duracionMs: 'int?', // Duración de la acción en milisegundos
+    
+    // Contexto de la acción
+    pantalla: 'string', // Nombre de la pantalla/componente
+    accion: 'string', // Nombre de la acción (ej: 'guardar_venta', 'buscar_cliente')
+    tipoElemento: 'string?', // Tipo de elemento (button, touchable, pressable, etc)
+    etiqueta: 'string?', // Texto del botón o etiqueta visible
+    
+    // Estado de la acción
+    exitoso: 'bool?', // Si la acción se completó exitosamente
+    codigoError: 'string?', // Código de error si falló
+    mensajeError: 'string?', // Mensaje de error descriptivo
+    
+    // Datos adicionales
+    parametros: 'string?', // JSON con parámetros de la acción
+    resultado: 'string?', // JSON con resultado de la acción
+    
+    // Información del dispositivo
+    ipDispositivo: 'string?',
+    nombreDispositivo: 'string?',
+    sistemaOperativo: 'string?',
+    versionApp: 'string?',
+    
+    // Control de sincronización
+    enviado: 'bool',
+    fechaEnvio: 'date?',
+    intentosEnvio: 'int?',
+  },
+  primaryKey: 'id',
+};
+
 export const ALL_SCHEMAS = [
   VentaSchema,
   UsuarioSchema,
@@ -356,4 +405,5 @@ export const ALL_SCHEMAS = [
   BitacoraSesionSchema,
   BitacoraAppSesionSchema,
   BitacoraAppEventoSchema,
+  TrazabilidadMovilSchema,
 ];

@@ -12,6 +12,7 @@ import { Icon } from 'react-native-elements';
 import BluetoothPrinterService, {
   PrinterDevice,
 } from '../services/BluetoothPrinterService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import {
   COLORS,
   SPACING,
@@ -47,95 +48,128 @@ export default function PrinterSettingsScreen() {
     }
   };
 
-  const handleScan = async () => {
-    setScanning(true);
-    setPrinters([]);
+  const handleScan = TrazabilidadService.wrapOnClick(
+    async () => {
+      setScanning(true);
+      setPrinters([]);
 
-    try {
-      const devices = await BluetoothPrinterService.scanPrinters();
-      setPrinters(devices);
+      try {
+        const devices = await BluetoothPrinterService.scanPrinters();
+        setPrinters(devices);
 
-      if (devices.length === 0) {
+        if (devices.length === 0) {
+          Alert.alert(
+            'Sin Resultados',
+            'No se encontraron impresoras Bluetooth.\n\nAsegúrate de que:\n- El Bluetooth esté activado\n- La impresora esté encendida\n- La impresora esté en modo de emparejamiento',
+          );
+        }
+      } catch (error) {
+        Alert.alert('Error', 'No se pudo escanear impresoras');
+      } finally {
+        setScanning(false);
+      }
+    },
+    'PrinterSettingsScreen',
+    'escanear_impresoras',
+    'button',
+    'Escanear',
+  );
+
+  const handleConnect = TrazabilidadService.wrapOnClick(
+    async (printer: PrinterDevice) => {
+      if (printer?.paired === false) {
         Alert.alert(
-          'Sin Resultados',
-          'No se encontraron impresoras Bluetooth.\n\nAsegúrate de que:\n- El Bluetooth esté activado\n- La impresora esté encendida\n- La impresora esté en modo de emparejamiento',
+          'Vinculación requerida',
+          `Primero empareja ${printer.name} desde Ajustes > Bluetooth (PIN común: 0000 o 1234) y vuelve a intentar.`,
         );
+        return;
       }
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo escanear impresoras');
-    } finally {
-      setScanning(false);
-    }
-  };
 
-  const handleConnect = async (printer: PrinterDevice) => {
-    if (printer?.paired === false) {
-      Alert.alert(
-        'Vinculación requerida',
-        `Primero empareja ${printer.name} desde Ajustes > Bluetooth (PIN común: 0000 o 1234) y vuelve a intentar.`,
-      );
-      return;
-    }
+      setConnecting(true);
 
-    setConnecting(true);
+      try {
+        const success = await BluetoothPrinterService.connectToPrinter(printer);
 
-    try {
-      const success = await BluetoothPrinterService.connectToPrinter(printer);
-
-      if (success) {
-        setIsConnected(true);
-        setCurrentPrinter(printer);
-        Alert.alert('✅ Conectado', `Conectado exitosamente a ${printer.name}`);
+        if (success) {
+          setIsConnected(true);
+          setCurrentPrinter(printer);
+          Alert.alert(
+            '✅ Conectado',
+            `Conectado exitosamente a ${printer.name}`,
+          );
+        }
+      } catch (error) {
+        Alert.alert('Error', 'No se pudo conectar a la impresora');
+      } finally {
+        setConnecting(false);
       }
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo conectar a la impresora');
-    } finally {
-      setConnecting(false);
-    }
-  };
+    },
+    'PrinterSettingsScreen',
+    'conectar_impresora',
+    'button',
+    'Conectar',
+  );
 
-  const handleDisconnect = async () => {
-    Alert.alert('Desconectar', '¿Deseas desconectar la impresora actual?', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Desconectar',
-        style: 'destructive',
-        onPress: async () => {
-          await BluetoothPrinterService.disconnect();
-          setIsConnected(false);
-          setCurrentPrinter(null);
-        },
-      },
-    ]);
-  };
-
-  const handleTestPrint = async () => {
-    const success = await BluetoothPrinterService.printTest();
-    if (success) {
-      Alert.alert('✅ Éxito', 'Ticket de prueba impreso correctamente');
-    }
-  };
-
-  const handleClearSaved = async () => {
-    Alert.alert(
-      'Eliminar Impresora',
-      '¿Deseas eliminar la impresora guardada?',
-      [
+  const handleDisconnect = TrazabilidadService.wrapOnClick(
+    async () => {
+      Alert.alert('Desconectar', '¿Deseas desconectar la impresora actual?', [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Eliminar',
+          text: 'Desconectar',
           style: 'destructive',
           onPress: async () => {
-            await BluetoothPrinterService.clearSavedPrinter();
             await BluetoothPrinterService.disconnect();
             setIsConnected(false);
             setCurrentPrinter(null);
-            Alert.alert('Eliminada', 'Impresora eliminada correctamente');
           },
         },
-      ],
-    );
-  };
+      ]);
+    },
+    'PrinterSettingsScreen',
+    'desconectar_impresora',
+    'button',
+    'Desconectar',
+  );
+
+  const handleTestPrint = TrazabilidadService.wrapOnClick(
+    async () => {
+      const success = await BluetoothPrinterService.printTest();
+      if (success) {
+        Alert.alert('✅ Éxito', 'Ticket de prueba impreso correctamente');
+      }
+    },
+    'PrinterSettingsScreen',
+    'probar_impresion',
+    'button',
+    'Probar',
+  );
+
+  const handleClearSaved = TrazabilidadService.wrapOnClick(
+    async () => {
+      Alert.alert(
+        'Eliminar Impresora',
+        '¿Deseas eliminar la impresora guardada?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Eliminar',
+            style: 'destructive',
+            onPress: async () => {
+              await BluetoothPrinterService.clearSavedPrinter();
+              await BluetoothPrinterService.disconnect();
+              setIsConnected(false);
+              setCurrentPrinter(null);
+              Alert.alert('Eliminada', 'Impresora eliminada correctamente');
+            },
+          },
+        ],
+      );
+    },
+    'PrinterSettingsScreen',
+    'eliminar_impresora',
+    'button',
+    'Eliminar Impresora',
+  );
 
   return (
     <View style={styles.container}>

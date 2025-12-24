@@ -35,7 +35,7 @@ class FullSyncService {
         this.realm = await Realm.open({
           path: 'FullSyncDB',
           schema: ALL_SCHEMAS,
-          schemaVersion: 9, // v9: BitacoraSync con appState, pantalla, origenSync
+          schemaVersion: 10, // v10: TrazabilidadMovil para tracking de clicks
           onMigration: (oldRealm: Realm, newRealm: Realm) => {
             const newCartera = newRealm.objects('Cartera');
             for (let i = 0; i < newCartera.length; i++) {
@@ -50,9 +50,13 @@ class FullSyncService {
         // Inicializar BitacoraService con el realm
         bitacoraService.setRealm(this.realm);
 
+        // Inicializar TrazabilidadService con el realm
+        const TrazabilidadService = require('./TrazabilidadService').default;
+        TrazabilidadService.setRealm(this.realm);
+
         this.isInitialized = true;
         console.log(
-          '✅ FullSyncService inicializado correctamente (v8 con BitacoraSync + BitacoraApp)',
+          '✅ FullSyncService inicializado correctamente (v10 con TrazabilidadMovil)',
         );
       } catch (error) {
         console.error('❌ Error al inicializar FullSyncService:', error);
@@ -2461,6 +2465,109 @@ class FullSyncService {
     } catch (error) {
       console.error('Error al eliminar sync table log:', error);
       return false;
+    }
+  }
+
+  async sendPendingTrazabilidadToServer(
+    sucursal: number,
+    idUsuario: number,
+  ): Promise<{ success: boolean; sent: number; error?: string }> {
+    console.log('[FullSyncService] 📤 Iniciando arrastre de trazabilidad...');
+
+    try {
+      if (!this.isInitialized || !this.realm) {
+        await this.initialize();
+      }
+      if (!this.realm) {
+        return { success: false, sent: 0, error: 'Realm no inicializado' };
+      }
+
+      const sieteDiasAtras = new Date();
+      sieteDiasAtras.setDate(sieteDiasAtras.getDate() - 7);
+      sieteDiasAtras.setHours(0, 0, 0, 0);
+
+      const trazabilidadPendiente = this.realm
+        .objects('TrazabilidadMovil')
+        .filtered('enviado == false AND fechaInicio >= $0', sieteDiasAtras)
+        .sorted('fechaInicio', false);
+
+      console.log('[FullSyncService] 📊 Trazabilidad pendiente:', trazabilidadPendiente.length);
+
+      if (trazabilidadPendiente.length === 0) {
+        return { success: true, sent: 0 };
+      }
+
+      const formatLocalDate = (date: Date | string | null | undefined): string => {
+        const d = date instanceof Date ? date : date ? new Date(date) : new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mi = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+      };
+
+      const trazabilidadArray = Array.from(trazabilidadPendiente).map((t: any) => ({
+        id: t.id,
+        idMovil: t.idMovil,
+        idUsuario: t.idUsuario,
+        nombreUsuario: t.nombreUsuario,
+        sucursal: t.sucursal,
+        fechaInicio: formatLocalDate(t.fechaInicio),
+        fechaFinal: t.fechaFinal ? formatLocalDate(t.fechaFinal) : null,
+        duracionMs: t.duracionMs,
+        pantalla: t.pantalla,
+        accion: t.accion,
+        tipoElemento: t.tipoElemento,
+        etiqueta: t.etiqueta,
+        exitoso: t.exitoso,
+        codigoError: t.codigoError,
+        mensajeError: t.mensajeError,
+        parametros: t.parametros,
+        resultado: t.resultado,
+        ipDispositivo: t.ipDispositivo,
+        nombreDispositivo: t.nombreDispositivo,
+        sistemaOperativo: t.sistemaOperativo,
+        versionApp: t.versionApp,
+      }));
+
+      const url = `${this.apiBaseUrl}/api/TrazabilidadMovil/sp_TrazabilidadMovilArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(trazabilidadArray),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[FullSyncService] ❌ Error en respuesta:', response.status);
+        return {
+          success: false,
+          sent: 0,
+          error: `Error del servidor: ${response.status}`,
+        };
+      }
+
+      this.realm.write(() => {
+        trazabilidadPendiente.forEach((t: any) => {
+          t.enviado = true;
+          t.fechaEnvio = new Date();
+        });
+      });
+
+      console.log('[FullSyncService] ✅ Trazabilidad enviada:', trazabilidadArray.length);
+      return { success: true, sent: trazabilidadArray.length };
+    } catch (error: any) {
+      console.error('[FullSyncService] ❌ Error enviando trazabilidad:', error);
+      return {
+        success: false,
+        sent: 0,
+        error: error?.message || 'Error desconocido',
+      };
     }
   }
 

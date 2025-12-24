@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Button, Card } from 'react-native-elements';
 import ClienteService from '../services/ClienteService';
+import TrazabilidadService from '../services/TrazabilidadService';
 
 const ClienteForm = ({ onClienteCreado }) => {
   const [formData, setFormData] = useState({
@@ -28,7 +29,8 @@ const ClienteForm = ({ onClienteCreado }) => {
     });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = TrazabilidadService.wrapOnClick(
+    async () => {
     // Validar campos requeridos
     if (!formData.nombre.trim()) {
       Alert.alert('Error', 'El nombre del cliente es requerido');
@@ -71,7 +73,12 @@ const ClienteForm = ({ onClienteCreado }) => {
     } finally {
       setLoading(false);
     }
-  };
+  },
+  'ClienteForm',
+  'guardar_cliente',
+  'button',
+  'Guardar Cliente'
+);
 
   return (
     <ScrollView style={styles.container}>
@@ -159,7 +166,7 @@ const ClienteForm = ({ onClienteCreado }) => {
             {'    '}usuarioEjecuta: 1,\n
             {'    '}ip: 'Mobile App',\n
             {'    '}dispositivo: 'React Native'\n
-            {'  }{'}'}\n
+            {'  }'}\n
             {'}'}
           </Text>
         </View>

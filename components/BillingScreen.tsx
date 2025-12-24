@@ -14,6 +14,7 @@ import { Icon } from 'react-native-elements';
 import TicketPrinter from '../services/TicketPrinter';
 import FullSyncService from '../services/FullSyncService';
 import AuthService, { Usuario } from '../services/AuthService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import { bitacoraService } from '../services/BitacoraService';
 import {
   COLORS,
@@ -141,42 +142,56 @@ export default function BillingScreen() {
     return Number(`${base}${suffix}`);
   };
 
-  const handleSelectClient = async (clientId: number, clientName: string) => {
-    setIsLoading(true);
-    setSelectedClient(clientName);
-    setSelectedClientId(clientId);
-    try {
-      const rows = carteraRows.filter(
-        (row: any) =>
-          row.idCliente === clientId && (row.saldo ?? 0) > 0 && !row.cobrado,
+  const handleSelectClient = TrazabilidadService.wrapOnClick(
+    async (clientId: number, clientName: string) => {
+      setIsLoading(true);
+      setSelectedClient(clientName);
+      setSelectedClientId(clientId);
+      try {
+        const rows = carteraRows.filter(
+          (row: any) =>
+            row.idCliente === clientId && (row.saldo ?? 0) > 0 && !row.cobrado,
+        );
+
+        const mapped: Invoice[] = rows.map((row: any) => ({
+          id: row.id,
+          fecha: row.fecha ? row.fecha.toLocaleDateString() : '',
+          nota: row.noVenta ? `Venta ${row.noVenta}` : `ID ${row.id}`,
+          diasCred: '0',
+          importe: row.saldo ?? 0,
+          ruta: row.sucursal ? `Suc ${row.sucursal}` : '',
+          pagar: false,
+          saldo: row.saldo ?? 0,
+          pago: 0,
+          idSegmento: row.idSegmento,
+          sucursalSegmento: row.sucursalSegmento,
+        }));
+
+        setInvoices(mapped);
+      } finally {
+        setIsLoading(false);
+        setModalClients(false);
+      }
+    },
+    'BillingScreen',
+    'seleccionar_cliente',
+    'button',
+    'Seleccionar Cliente',
+  );
+
+  const handleTogglePayment = TrazabilidadService.wrapOnClick(
+    (index: number) => {
+      setInvoices(prev =>
+        prev.map((inv, i) =>
+          i === index ? { ...inv, pagar: !inv.pagar } : inv,
+        ),
       );
-
-      const mapped: Invoice[] = rows.map((row: any) => ({
-        id: row.id,
-        fecha: row.fecha ? row.fecha.toLocaleDateString() : '',
-        nota: row.noVenta ? `Venta ${row.noVenta}` : `ID ${row.id}`,
-        diasCred: '0',
-        importe: row.saldo ?? 0,
-        ruta: row.sucursal ? `Suc ${row.sucursal}` : '',
-        pagar: false,
-        saldo: row.saldo ?? 0,
-        pago: 0,
-        idSegmento: row.idSegmento,
-        sucursalSegmento: row.sucursalSegmento,
-      }));
-
-      setInvoices(mapped);
-    } finally {
-      setIsLoading(false);
-      setModalClients(false);
-    }
-  };
-
-  const handleTogglePayment = (index: number) => {
-    setInvoices(prev =>
-      prev.map((inv, i) => (i === index ? { ...inv, pagar: !inv.pagar } : inv)),
-    );
-  };
+    },
+    'BillingScreen',
+    'toggle_pago',
+    'button',
+    'Toggle Pago',
+  );
 
   const insertar = async () => {
     if (isProcessing) return;
@@ -397,7 +412,18 @@ export default function BillingScreen() {
           </View>
           <TouchableOpacity
             style={styles.smallBtn}
-            onPress={toggleClientModal}
+            onPress={() => {
+              TrazabilidadService.registrarAccionCompleta(
+                {
+                  pantalla: 'BillingScreen',
+                  accion: 'abrir_modal_cliente',
+                  tipoElemento: 'button',
+                  etiqueta: 'Seleccionar Cliente',
+                },
+                { exitoso: true },
+              );
+              toggleClientModal();
+            }}
             disabled={isLoading}
           >
             <Text style={styles.smallBtnText}>
@@ -483,13 +509,35 @@ export default function BillingScreen() {
             label="Efectivo"
             icon="attach-money"
             selected={efectivo}
-            onPress={toggleEfectivo}
+            onPress={() => {
+              TrazabilidadService.registrarAccionCompleta(
+                {
+                  pantalla: 'BillingScreen',
+                  accion: 'seleccionar_efectivo',
+                  tipoElemento: 'button',
+                  etiqueta: 'Efectivo',
+                },
+                { exitoso: true },
+              );
+              toggleEfectivo();
+            }}
           />
           <Chip
             label="Transferencia"
             icon="account-balance"
             selected={transferencia}
-            onPress={toggleTransferencia}
+            onPress={() => {
+              TrazabilidadService.registrarAccionCompleta(
+                {
+                  pantalla: 'BillingScreen',
+                  accion: 'seleccionar_transferencia',
+                  tipoElemento: 'button',
+                  etiqueta: 'Transferencia',
+                },
+                { exitoso: true },
+              );
+              toggleTransferencia();
+            }}
           />
         </View>
         <TouchableOpacity
@@ -497,7 +545,19 @@ export default function BillingScreen() {
             styles.successBtn,
             (totalToPay <= 0 || isProcessing) && styles.primaryBtnDisabled,
           ]}
-          onPress={insertar}
+          onPress={() => {
+            TrazabilidadService.registrarAccionCompleta(
+              {
+                pantalla: 'BillingScreen',
+                accion: 'procesar_cobranza',
+                tipoElemento: 'button',
+                etiqueta: 'Procesar Cobranza',
+                parametros: { total: totalToPay },
+              },
+              { exitoso: true },
+            );
+            insertar();
+          }}
           disabled={totalToPay <= 0 || isProcessing}
         >
           <Icon name="check-circle" type="material" color="#fff" size={24} />
@@ -548,7 +608,18 @@ export default function BillingScreen() {
             />
             <TouchableOpacity
               style={styles.secondaryBtn}
-              onPress={toggleClientModal}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  {
+                    pantalla: 'BillingScreen',
+                    accion: 'cerrar_modal_cliente',
+                    tipoElemento: 'button',
+                    etiqueta: 'Cerrar',
+                  },
+                  { exitoso: true },
+                );
+                toggleClientModal();
+              }}
             >
               <Text style={styles.secondaryBtnText}>Cerrar</Text>
             </TouchableOpacity>

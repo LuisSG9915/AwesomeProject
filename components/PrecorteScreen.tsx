@@ -14,6 +14,7 @@ import TicketPrinter from '../services/TicketPrinter';
 import BluetoothPrinterService from '../services/BluetoothPrinterService';
 import FullSyncService from '../services/FullSyncService';
 import AuthService from '../services/AuthService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import {
   COLORS,
   SPACING,
@@ -116,34 +117,47 @@ export default function PrecorteScreen() {
     loadInventario();
   }, []);
 
-  const consultar = () => {
-    loadInventario();
-  };
+  const consultar = TrazabilidadService.wrapOnClick(
+    () => {
+      loadInventario();
+    },
+    'PrecorteScreen',
+    'consultar_precorte',
+    'button',
+    'Consultar',
+  );
 
-  const imprimir = async () => {
-    try {
-      await TicketPrinter.printPrecorteTicket({
-        date: new Date(fecha),
-        items: items.map(it => ({
-          product: it.descripcion,
-          entries: it.entradas,
-          exits: it.salidas,
-          inventory: it.ifValue,
-        })),
-        totalCash: totalEfectivo,
-      });
+  const imprimir = TrazabilidadService.wrapOnClick(
+    async () => {
+      try {
+        await TicketPrinter.printPrecorteTicket({
+          date: new Date(fecha),
+          items: items.map(it => ({
+            product: it.descripcion,
+            entries: it.entradas,
+            exits: it.salidas,
+            inventory: it.ifValue,
+          })),
+          totalCash: totalEfectivo,
+        });
 
-      // Actualizar estado de impresora
-      const status = BluetoothPrinterService.getStatus();
-      setPrinterConnected(status.connected);
+        // Actualizar estado de impresora
+        const status = BluetoothPrinterService.getStatus();
+        setPrinterConnected(status.connected);
 
-      if (status.connected) {
-        Alert.alert('🖨️ Impreso', `Ticket enviado a ${status.printer?.name}`);
+        if (status.connected) {
+          Alert.alert('🖨️ Impreso', `Ticket enviado a ${status.printer?.name}`);
+        }
+      } catch (error) {
+        Alert.alert('❌ Error', 'No se pudo imprimir el precorte');
+        throw error;
       }
-    } catch (error) {
-      Alert.alert('❌ Error', 'No se pudo imprimir el precorte');
-    }
-  };
+    },
+    'PrecorteScreen',
+    'imprimir_precorte',
+    'button',
+    'Imprimir Reporte',
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

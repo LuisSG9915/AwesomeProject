@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import SyncService from '../services/SyncService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import { COLORS } from '../theme/theme';
 
 type ClienteGrupo = {
@@ -123,7 +124,18 @@ export default function ClienteGruposScreen() {
 
       <TouchableOpacity
         style={styles.syncButton}
-        onPress={syncGrupos}
+        onPress={() => {
+          TrazabilidadService.registrarAccionCompleta(
+            {
+              pantalla: 'ClienteGruposScreen',
+              accion: 'sincronizar_grupos',
+              tipoElemento: 'button',
+              etiqueta: 'Sincronizar Grupos',
+            },
+            { exitoso: true },
+          );
+          syncGrupos();
+        }}
         disabled={refreshing}
       >
         {refreshing ? (

@@ -29,6 +29,7 @@ import { Icon } from 'react-native-elements';
 import BackgroundSyncService, {
   BackgroundSyncState,
 } from '../services/BackgroundSyncService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../theme/theme';
 
 interface SyncStatusPanelProps {
@@ -175,9 +176,15 @@ export default function SyncStatusPanel({
     });
   };
 
-  const handleManualSync = () => {
-    BackgroundSyncService.syncNow();
-  };
+  const handleManualSync = TrazabilidadService.wrapOnClick(
+    () => {
+      BackgroundSyncService.syncNow();
+    },
+    'SyncStatusPanel',
+    'sincronizar_manual',
+    'button',
+    'Sincronizar Ahora',
+  );
 
   if (compact) {
     // Modo compacto para header

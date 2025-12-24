@@ -33,6 +33,10 @@
       </intent-filter>
     </activity>
 
+    <!-- Servicio de sincronización en foreground (react-native-background-actions) -->
+    <!-- CRÍTICO: foregroundServiceType es OBLIGATORIO en Android 14+ (API 34+) -->
+    <service android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask" android:foregroundServiceType="dataSync" android:exported="false" />
+
     <!-- Receiver para iniciar sincronización al bootear el dispositivo -->
     <receiver android:name="com.transistorsoft.rnbackgroundfetch.BootReceiver" android:enabled="true" android:exported="false">
       <intent-filter>

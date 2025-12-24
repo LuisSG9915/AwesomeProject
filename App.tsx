@@ -39,6 +39,8 @@ import BluetoothPrinterService from './services/BluetoothPrinterService';
 import BackgroundSyncService from './services/BackgroundSyncService';
 import SyncStatusPanel from './components/SyncStatusPanel';
 import { bitacoraService } from './services/BitacoraService';
+import TrazabilidadService from './services/TrazabilidadService';
+import NotificationPermissionService from './services/NotificationPermissionService';
 import {
   APP_NAME,
   COLORS,
@@ -106,6 +108,16 @@ function App() {
       } catch (error) {
         console.warn('[App] No se pudo inicializar FullSyncService:', error);
         return;
+      }
+
+      try {
+        await TrazabilidadService.initialize();
+        console.log('[App] ✅ TrazabilidadService inicializado');
+      } catch (error) {
+        console.warn(
+          '[App] No se pudo inicializar TrazabilidadService:',
+          error,
+        );
       }
 
       try {
@@ -242,20 +254,45 @@ function AppContent({ navigation }: { navigation: any }) {
   const [userName, setUserName] = useState<string>('');
 
   useEffect(() => {
-    const loadUserInfo = async () => {
+    const initializeApp = async () => {
+      // 1. Cargar información de usuario
       const user = await AuthService.restoreSession();
       if (user) {
         setUserName(user.claveEmpleado || 'Usuario');
+
+        // Configurar contexto de usuario en TrazabilidadService
+        TrazabilidadService.setCurrentUser({
+          id: user.id || user.idUsuario || 0,
+          nombre: user.nombre || user.claveEmpleado || 'Usuario',
+          sucursal: user.sucursal_origen || user.sucursal || 1,
+        });
+        console.log(
+          '[App] ✅ Contexto de usuario configurado en TrazabilidadService',
+        );
       }
+
+      // 2. IMPORTANTE: Solicitar permisos de notificaciones ANTES de iniciar sync en background
+      // Esto evita que la app crashee en Android 13+ cuando intenta mostrar notificaciones
+      console.log('[App] 🔔 Solicitando permisos de notificaciones...');
+      try {
+        await NotificationPermissionService.requestNotificationPermission(true);
+        console.log('[App] ✅ Permisos de notificaciones procesados');
+      } catch (error) {
+        console.warn(
+          '[App] ⚠️ Error solicitando permisos (no crítico):',
+          error,
+        );
+      }
+
+      // 3. Iniciar sincronización automática
+      // Si no hay permisos, ForegroundService no iniciará pero la app seguirá funcionando
+      console.log('[App] 🚀 Iniciando BackgroundSyncService...');
+      BackgroundSyncService.start();
     };
-    loadUserInfo();
 
-    // Iniciar sincronización automática
-    // BackgroundFetch se configura una vez, pero el intervalo se reinicia cada vez
-    BackgroundSyncService.start();
+    initializeApp();
 
-    // Detener intervalo de primer plano al desmontar
-    // BackgroundFetch sigue funcionando para sincronización con app cerrada
+    // Detener sincronización al desmontar
     return () => {
       BackgroundSyncService.stop();
     };

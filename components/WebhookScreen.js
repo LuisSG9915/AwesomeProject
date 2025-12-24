@@ -14,6 +14,7 @@ import {
 import { Card, Button, Input, Icon, Badge } from 'react-native-elements';
 import WebhookManager from '../services/WebhookManager';
 import WebSocketService from '../services/WebSocketService';
+import TrazabilidadService from '../services/TrazabilidadService';
 
 const WebhookScreen = () => {
   const [logs, setLogs] = useState([]);
@@ -105,7 +106,8 @@ const WebhookScreen = () => {
     }
   };
 
-  const handleAddSubscription = async () => {
+  const handleAddSubscription = TrazabilidadService.wrapOnClick(
+    async () => {
     if (!newSubscription.event || !newSubscription.url) {
       Alert.alert('Error', 'Todos los campos son requeridos');
       return;
@@ -126,18 +128,30 @@ const WebhookScreen = () => {
     } catch (error) {
       Alert.alert('Error', 'No se pudo agregar la suscripción');
     }
-  };
+  },
+  'WebhookScreen',
+  'agregar_suscripcion',
+  'button',
+  'Agregar Suscripción'
+);
 
-  const handleToggleSubscription = async (subscriptionId, isActive) => {
+  const handleToggleSubscription = TrazabilidadService.wrapOnClick(
+    async (subscriptionId, isActive) => {
     try {
       await WebhookManager.toggleSubscription(subscriptionId, isActive);
       loadData();
     } catch (error) {
-      Alert.alert('Error', 'No se pudo actualizar la suscripción');
+      Alert.alert('Error', 'No se pudo cambiar el estado de la suscripción');
     }
-  };
+  },
+  'WebhookScreen',
+  'toggle_suscripcion',
+  'button',
+  'Toggle Suscripción'
+);
 
-  const handleDeleteSubscription = async (subscriptionId) => {
+  const handleDeleteSubscription = TrazabilidadService.wrapOnClick(
+    async (subscriptionId) => {
     Alert.alert(
       'Confirmar',
       '¿Estás seguro de eliminar esta suscripción?',
@@ -158,9 +172,15 @@ const WebhookScreen = () => {
         }
       ]
     );
-  };
+  },
+  'WebhookScreen',
+  'eliminar_suscripcion',
+  'button',
+  'Eliminar Suscripción'
+);
 
-  const sendTestWebhook = async () => {
+  const sendTestWebhook = TrazabilidadService.wrapOnClick(
+    async () => {
     try {
       const testData = {
         id: 999,
@@ -179,7 +199,12 @@ const WebhookScreen = () => {
     } catch (error) {
       Alert.alert('Error', 'No se pudo enviar el webhook de prueba');
     }
-  };
+  },
+  'WebhookScreen',
+  'enviar_webhook_prueba',
+  'button',
+  'Enviar Webhook de Prueba'
+);
 
   const renderLogItem = ({ item }) => (
     <Card containerStyle={styles.logCard}>

@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { Card, Button, SearchBar, Icon, Badge } from 'react-native-elements';
 import SyncService from '../services/SyncService';
-import WebhookService from '../services/WebhookService';
+import WebhookManager from '../services/WebhookManager';
+import TrazabilidadService from '../services/TrazabilidadService';
 
 const ClientesTable = () => {
   const [clientes, setClientes] = useState([]);
@@ -41,7 +42,8 @@ const ClientesTable = () => {
     }
   }, []);
 
-  const handleSyncClients = useCallback(async () => {
+  const handleSyncClients = TrazabilidadService.wrapOnClick(
+    async () => {
     setLoading(true);
     
     try {
@@ -61,9 +63,15 @@ const ClientesTable = () => {
     } finally {
       setLoading(false);
     }
-  }, [loadData]);
+  },
+  'ClientesTable',
+  'sincronizar_clientes',
+  'button',
+  'Sincronizar Clientes'
+);
 
-  const handleSendClientViaWebhook = useCallback(async (client) => {
+  const handleSendClientViaWebhook = TrazabilidadService.wrapOnClick(
+    async (client) => {
     Alert.alert(
       '📡 Enviar Cliente via Webhook',
       `¿Enviar el cliente "${client.nombre}" a través del webhook?`,
@@ -74,7 +82,7 @@ const ClientesTable = () => {
           onPress: async () => {
             try {
               // Configurar IP del servidor
-              WebhookService.setProductionUrl('10.0.2.2'); // Para Android emulator
+              WebhookManager.setProductionUrl('10.0.2.2'); // Para Android emulator
               
               // Preparar datos completos del cliente
               const clientData = {
@@ -106,7 +114,7 @@ const ClientesTable = () => {
               };
               
               // Enviar cliente completo
-              const result = await WebhookService.enviarClienteCreadoCompleto(
+              const result = await WebhookManager.enviarClienteCreadoCompleto(
                 clientData, 
                 'mobile-app-user'
               );
@@ -136,7 +144,12 @@ const ClientesTable = () => {
         }
       ]
     );
-  }, []);
+  },
+  'ClientesTable',
+  'enviar_cliente_webhook',
+  'button',
+  'Enviar via Webhook'
+);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -150,7 +163,8 @@ const ClientesTable = () => {
     setClientes(searchResults);
   }, []);
 
-  const handleDeleteAll = useCallback(() => {
+  const handleDeleteAll = TrazabilidadService.wrapOnClick(
+    () => {
     Alert.alert(
       '⚠️ Confirmar Eliminación',
       '¿Estás seguro de eliminar todos los clientes locales? Esta acción no se puede deshacer.',
@@ -167,12 +181,23 @@ const ClientesTable = () => {
         }
       ]
     );
-  }, [loadData]);
+  },
+  'ClientesTable',
+  'eliminar_todos',
+  'button',
+  'Eliminar Todos'
+);
 
   const renderClientItem = ({ item }) => (
     <TouchableOpacity
       style={styles.clientItem}
-      onPress={() => setSelectedClient(item)}
+      onPress={() => {
+        TrazabilidadService.registrarAccionCompleta(
+          { pantalla: 'ClientesTable', accion: 'ver_detalle_cliente', tipoElemento: 'button', etiqueta: 'Ver Cliente', parametros: { clienteId: item.idCliente } },
+          { exitoso: true }
+        );
+        setSelectedClient(item);
+      }}
     >
       <View style={styles.clientInfo}>
         <View style={styles.clientHeader}>
@@ -185,7 +210,13 @@ const ClientesTable = () => {
             />
             <TouchableOpacity
               style={styles.webhookButton}
-              onPress={() => handleSendClientViaWebhook(item)}
+              onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  { pantalla: 'ClientesTable', accion: 'enviar_webhook_inline', tipoElemento: 'button', etiqueta: 'Enviar', parametros: { clienteId: item.idCliente } },
+                  { exitoso: true }
+                );
+                handleSendClientViaWebhook(item);
+              }}
             >
               <Icon
                 name="send"
@@ -312,7 +343,13 @@ const ClientesTable = () => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Detalles del Cliente</Text>
-              <TouchableOpacity onPress={() => setSelectedClient(null)}>
+              <TouchableOpacity onPress={() => {
+                TrazabilidadService.registrarAccionCompleta(
+                  { pantalla: 'ClientesTable', accion: 'cerrar_modal_detalle', tipoElemento: 'button', etiqueta: 'Cerrar' },
+                  { exitoso: true }
+                );
+                setSelectedClient(null);
+              }}>
                 <Icon name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>

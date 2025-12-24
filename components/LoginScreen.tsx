@@ -15,6 +15,7 @@ import { Icon } from 'react-native-elements';
 import AuthService from '../services/AuthService';
 import FullSyncService from '../services/FullSyncService';
 import { bitacoraService } from '../services/BitacoraService';
+import TrazabilidadService from '../services/TrazabilidadService';
 import { SyncProgress } from '../services/sync/SyncTask';
 import SyncProgressModal from './SyncProgressModal';
 import {
@@ -45,111 +46,118 @@ export default function LoginScreen({ navigation }: any) {
     checkSession();
   }, [navigation]);
 
-  const handleLogin = async () => {
-    if (!usuario || !password) {
-      Alert.alert('Campos requeridos', 'Ingresa usuario y contraseña');
-      return;
-    }
-    console.log('Login attempt with user:', usuario);
-    setLoading(true);
-
-    let stage: 'login' | 'sync' = 'login';
-    try {
-      try {
-        await bitacoraService.registrarEventoApp({
-          tipo: 'login',
-          accion: 'attempt',
-          descripcion: 'Intento de login',
-          detalles: {
-            usuario: usuario.trim(),
-          },
-        });
-      } catch (error) {
-        console.warn(
-          '[LoginScreen] No se pudo registrar login attempt:',
-          error,
-        );
+  const handleLogin = TrazabilidadService.wrapOnClick(
+    async () => {
+      if (!usuario || !password) {
+        Alert.alert('Campos requeridos', 'Ingresa usuario y contraseña');
+        return;
       }
+      console.log('Login attempt with user:', usuario);
+      setLoading(true);
 
-      const user = await AuthService.login(usuario.trim(), password.trim());
-
+      let stage: 'login' | 'sync' = 'login';
       try {
-        await bitacoraService.registrarEventoApp({
-          tipo: 'login',
-          accion: 'success',
-          descripcion: 'Login exitoso',
+        try {
+          await bitacoraService.registrarEventoApp({
+            tipo: 'login',
+            accion: 'attempt',
+            descripcion: 'Intento de login',
+            detalles: {
+              usuario: usuario.trim(),
+            },
+          });
+        } catch (error) {
+          console.warn(
+            '[LoginScreen] No se pudo registrar login attempt:',
+            error,
+          );
+        }
+
+        const user = await AuthService.login(usuario.trim(), password.trim());
+
+        try {
+          await bitacoraService.registrarEventoApp({
+            tipo: 'login',
+            accion: 'success',
+            descripcion: 'Login exitoso',
+          });
+        } catch (error) {
+          console.warn(
+            '[LoginScreen] No se pudo registrar login success:',
+            error,
+          );
+        }
+
+        // Iniciar sincronización después del login exitoso
+        setLoading(false);
+        setSyncing(true);
+        setSyncProgress([]);
+
+        stage = 'sync';
+
+        try {
+          await bitacoraService.registrarEventoApp({
+            tipo: 'sync_after_login',
+            accion: 'start',
+            descripcion: 'Sincronización post-login iniciada',
+          });
+        } catch (error) {
+          console.warn(
+            '[LoginScreen] No se pudo registrar sync_after_login start:',
+            error,
+          );
+        }
+
+        const sucursal = user.sucursal || user.sucursal_origen || 0;
+        console.log('Sincronizando sucursal:', sucursal);
+        console.log('Sincronizando sucursal:', user);
+        await FullSyncService.syncAll(sucursal, (progress: SyncProgress) => {
+          setSyncProgress(prev => [...prev, progress]);
         });
-      } catch (error) {
-        console.warn(
-          '[LoginScreen] No se pudo registrar login success:',
-          error,
-        );
+
+        try {
+          await bitacoraService.registrarEventoApp({
+            tipo: 'sync_after_login',
+            accion: 'success',
+            descripcion: 'Sincronización post-login exitosa',
+          });
+        } catch (error) {
+          console.warn(
+            '[LoginScreen] No se pudo registrar sync_after_login success:',
+            error,
+          );
+        }
+
+        // Mantener el modal visible 2 segundos después de terminar
+        await new Promise<void>(resolve => setTimeout(resolve, 2000));
+
+        setSyncing(false);
+        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+      } catch (err: any) {
+        const msg = err?.message || 'Ocurrió un error al iniciar sesión';
+        Alert.alert('No autorizado', msg);
+
+        try {
+          await bitacoraService.registrarEventoApp({
+            tipo: stage === 'login' ? 'login' : 'sync_after_login',
+            accion: 'error',
+            descripcion: msg,
+          });
+        } catch (error) {
+          console.warn('[LoginScreen] No se pudo registrar error:', error);
+        }
+
+        setSyncing(false);
+        throw err;
+      } finally {
+        setLoading(false);
       }
-
-      // Iniciar sincronización después del login exitoso
-      setLoading(false);
-      setSyncing(true);
-      setSyncProgress([]);
-
-      stage = 'sync';
-
-      try {
-        await bitacoraService.registrarEventoApp({
-          tipo: 'sync_after_login',
-          accion: 'start',
-          descripcion: 'Sincronización post-login iniciada',
-        });
-      } catch (error) {
-        console.warn(
-          '[LoginScreen] No se pudo registrar sync_after_login start:',
-          error,
-        );
-      }
-
-      const sucursal = user.sucursal || user.sucursal_origen || 0;
-      console.log('Sincronizando sucursal:', sucursal);
-      console.log('Sincronizando sucursal:', user);
-      await FullSyncService.syncAll(sucursal, (progress: SyncProgress) => {
-        setSyncProgress(prev => [...prev, progress]);
-      });
-
-      try {
-        await bitacoraService.registrarEventoApp({
-          tipo: 'sync_after_login',
-          accion: 'success',
-          descripcion: 'Sincronización post-login exitosa',
-        });
-      } catch (error) {
-        console.warn(
-          '[LoginScreen] No se pudo registrar sync_after_login success:',
-          error,
-        );
-      }
-
-      // Mantener el modal visible 2 segundos después de terminar
-      await new Promise<void>(resolve => setTimeout(resolve, 2000));
-
-      setSyncing(false);
-      navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
-    } catch (err: any) {
-      const msg = err?.message || 'Ocurrió un error al iniciar sesión';
-      Alert.alert('No autorizado', msg);
-
-      try {
-        await bitacoraService.registrarEventoApp({
-          tipo: stage === 'login' ? 'login' : 'sync_after_login',
-          accion: 'error',
-          descripcion: msg,
-        });
-      } catch (error) {
-        console.warn('[LoginScreen] No se pudo registrar error:', error);
-      }
-
-      setSyncing(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    'LoginScreen',
+    'login',
+    'button',
+    'INGRESAR',
+  );
 
   return (
     <KeyboardAvoidingView
