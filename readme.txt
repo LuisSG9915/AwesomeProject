@@ -7,3 +7,5 @@ cd ..
 
 DETENER CACHE
 cd android && ./gradlew --stop
+
+adb logcat | findstr "SyncAlarmReceiver ExactAlarmSync"

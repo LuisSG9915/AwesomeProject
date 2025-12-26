@@ -14,6 +14,9 @@
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
   <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
+  <!-- Permiso para alarmas exactas repetitivas (Android 14+) -->
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+
   <!-- Permisos Bluetooth para Android < 12 -->
   <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
   <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
@@ -37,10 +40,20 @@
     <!-- CRÍTICO: foregroundServiceType es OBLIGATORIO en Android 14+ (API 34+) -->
     <service android:name="com.asterinet.react.bgactions.RNBackgroundActionsTask" android:foregroundServiceType="dataSync" android:exported="false" />
 
+    <!-- Servicio HeadlessJS para alarmas exactas -->
+    <service android:name=".ExactAlarmSyncService" android:exported="false" />
+
     <!-- Receiver para iniciar sincronización al bootear el dispositivo -->
     <receiver android:name="com.transistorsoft.rnbackgroundfetch.BootReceiver" android:enabled="true" android:exported="false">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED"/>
+      </intent-filter>
+    </receiver>
+
+    <!-- Receiver para alarmas exactas de sincronización cada minuto -->
+    <receiver android:name=".SyncAlarmReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.awesomeproject.EXACT_SYNC_ALARM"/>
       </intent-filter>
     </receiver>
   </application>

@@ -17,6 +17,7 @@ class MainApplication : Application(), ReactApplication {
         PackageList(this).packages.apply {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
+          add(ExactAlarmSyncPackage())
           val netInfoPackageClassName = "com.reactnativecommunity.netinfo.NetInfoPackage"
           val hasNetInfoPackage = any { it.javaClass.name == netInfoPackageClassName }
           if (!hasNetInfoPackage) {

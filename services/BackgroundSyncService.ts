@@ -20,6 +20,7 @@ import AuthService from './AuthService';
 import BackgroundFetch from 'react-native-background-fetch';
 import { AppState, AppStateStatus } from 'react-native';
 import ForegroundSyncService from './ForegroundSyncService';
+import ExactAlarmSyncService from './ExactAlarmSyncService';
 
 export type SyncStatus =
   | 'idle' // No sincronizando
@@ -96,32 +97,70 @@ class BackgroundSyncService {
       nextSyncTime: nextSync,
     });
 
-    // Intentar iniciar Foreground Service para sincronización con pantalla apagada
-    // Espera 5 segundos para que la app termine de inicializar completamente
-    setTimeout(async () => {
-      try {
-        console.log('[BackgroundSync] 🔧 Configurando Foreground Service...');
-        ForegroundSyncService.configure({
-          intervalMinutes: this.FOREGROUND_INTERVAL_MINUTES,
-        });
-        
-        console.log('[BackgroundSync] 🚀 Iniciando Foreground Service...');
-        console.log('[BackgroundSync] ℹ️ Nota: Requiere permisos de notificaciones y Android 14+ con foregroundServiceType');
-        
-        await ForegroundSyncService.start();
-        console.log('[BackgroundSync] ✅ Foreground Service iniciado exitosamente');
-        console.log('[BackgroundSync] 📱 La sincronización funcionará con pantalla apagada');
-      } catch (error: any) {
-        console.error('[BackgroundSync] ❌ Error iniciando Foreground Service:', error);
-        console.error('[BackgroundSync] Error detalle:', error?.message || 'Sin mensaje');
-        console.error('[BackgroundSync] Error stack:', error?.stack || 'Sin stack trace');
-        console.warn('[BackgroundSync] ⚠️ ForegroundService NO disponible - sincronización solo con app activa');
-        console.warn('[BackgroundSync] ℹ️ La app continuará funcionando normalmente');
-        
-        // NO lanzar error - permitir que la app continúe
-        // El intervalo normal seguirá funcionando
+    // CRÍTICO: Configurar BackgroundFetch para sincronización cuando la app está en background REAL
+    // Esto usa HeadlessTask registrado en index.js y funciona incluso cuando cambias de app
+    try {
+      console.log(
+        '[BackgroundSync] 🔧 Configurando BackgroundFetch (HeadlessTask)...',
+      );
+      await this.configureBackgroundFetch();
+      console.log(
+        '[BackgroundSync] ✅ BackgroundFetch configurado - sincronizará cada ~15 min en background',
+      );
+    } catch (error: any) {
+      console.error(
+        '[BackgroundSync] ❌ Error configurando BackgroundFetch:',
+        error?.message,
+      );
+    }
+
+    // CRÍTICO: Configurar alarmas exactas para sincronización forzada cada minuto
+    // Esto ignora completamente las políticas de ahorro de batería de Android
+    // NOTA: ForegroundService DESACTIVADO para evitar colisiones y notificaciones persistentes
+    try {
+      console.log(
+        '[BackgroundSync] ⚡ Configurando alarmas exactas (cada 1 min)...',
+      );
+      const canSchedule = await ExactAlarmSyncService.canScheduleExactAlarms();
+
+      if (canSchedule) {
+        await ExactAlarmSyncService.start();
+        console.log(
+          '[BackgroundSync] ✅ Alarmas exactas iniciadas - sincronizará cada 1 min',
+        );
+        console.log('[BackgroundSync] ✅ Sin notificación persistente');
+        console.log(
+          '[BackgroundSync] ⚠️ ADVERTENCIA: Esto consume más batería',
+        );
+      } else {
+        console.warn(
+          '[BackgroundSync] ⚠️ No se pueden programar alarmas exactas',
+        );
+        console.warn(
+          '[BackgroundSync] Usuario debe habilitar en: Configuración → Apps → Alarmas',
+        );
+        console.warn(
+          '[BackgroundSync] La app funcionará con BackgroundFetch (~15 min)',
+        );
       }
-    }, 5000); // Esperar 5 segundos en lugar de 3
+    } catch (error: any) {
+      console.error(
+        '[BackgroundSync] ❌ Error configurando alarmas exactas:',
+        error?.message,
+      );
+      console.warn(
+        '[BackgroundSync] La app funcionará con BackgroundFetch (~15 min)',
+      );
+    }
+
+    // NOTA: ForegroundService DESACTIVADO intencionalmente
+    // Razones:
+    // 1. Evita colisiones con alarmas exactas
+    // 2. Elimina notificación persistente (no deseada por el cliente)
+    // 3. Las alarmas exactas son suficientes para sincronización cada minuto
+    console.log(
+      '[BackgroundSync] ℹ️ ForegroundService desactivado - usando solo alarmas exactas',
+    );
 
     // Usar intervalo para cuando la app está en primer plano (más preciso)
     this.intervalId = setInterval(() => {
@@ -159,7 +198,9 @@ class BackgroundSyncService {
           // CAMBIO: NO limpiamos el intervalo porque ForegroundService puede pausarse en background
           // Dejamos que ambos (intervalo + ForegroundService) corran como respaldo
           console.log(
-            `[BackgroundSync] 🌙 App en background - intervalo SIGUE ACTIVO como respaldo (${this.SYNC_INTERVAL_MS / 1000}s)`,
+            `[BackgroundSync] 🌙 App en background - intervalo SIGUE ACTIVO como respaldo (${
+              this.SYNC_INTERVAL_MS / 1000
+            }s)`,
           );
           console.log(
             `[BackgroundSync] ℹ️ ForegroundService también activo (${this.FOREGROUND_INTERVAL_MINUTES} min)`,
@@ -211,7 +252,7 @@ class BackgroundSyncService {
       // Configurar BackgroundFetch (mantenido como respaldo, pero Foreground Service es el principal)
       const status = await BackgroundFetch.configure(
         {
-          minimumFetchInterval: 15, // 15 minutos (mínimo permitido por Android)
+          minimumFetchInterval: 1, // 15 minutos (mínimo permitido por Android)
           stopOnTerminate: false, // Continuar después de cerrar la app
           startOnBoot: true, // Iniciar al reiniciar el dispositivo
           enableHeadless: true, // Permite ejecución sin UI (HeadlessTask en index.js)
@@ -303,18 +344,28 @@ class BackgroundSyncService {
       console.log('[BackgroundSync] ℹ️ No hay intervalo activo para detener');
     }
 
-    // Detener Foreground Service
+    // NOTA: ForegroundService desactivado - no es necesario detenerlo
+    console.log(
+      '[BackgroundSync] ℹ️ ForegroundService no está en uso (desactivado)',
+    );
+
+    // Detener alarmas exactas
     try {
-      console.log('[BackgroundSync] 🔍 Verificando estado de Foreground Service...');
-      if (ForegroundSyncService.isActive()) {
-        console.log('[BackgroundSync] 🛑 Deteniendo Foreground Service...');
-        await ForegroundSyncService.stop();
-        console.log('[BackgroundSync] ✅ Foreground Service detenido');
+      console.log(
+        '[BackgroundSync] 🔍 Verificando estado de alarmas exactas...',
+      );
+      if (ExactAlarmSyncService.isActive()) {
+        console.log('[BackgroundSync] 🛑 Deteniendo alarmas exactas...');
+        await ExactAlarmSyncService.stop();
+        console.log('[BackgroundSync] ✅ Alarmas exactas detenidas');
       } else {
-        console.log('[BackgroundSync] ℹ️ Foreground Service no estaba activo');
+        console.log('[BackgroundSync] ℹ️ Alarmas exactas no estaban activas');
       }
     } catch (error: any) {
-      console.error('[BackgroundSync] ❌ Error deteniendo Foreground Service:', error);
+      console.error(
+        '[BackgroundSync] ❌ Error deteniendo alarmas exactas:',
+        error,
+      );
       console.error('[BackgroundSync] Error detalle:', error?.message);
     }
 
@@ -513,9 +564,14 @@ class BackgroundSyncService {
 
       // ARRASTRE DE TRAZABILIDAD: Enviar trazabilidad de clicks de los últimos 7 días
       try {
-        console.log('[BackgroundSync] 📤 Iniciando arrastre de trazabilidad...');
+        console.log(
+          '[BackgroundSync] 📤 Iniciando arrastre de trazabilidad...',
+        );
         const trazabilidadResult =
-          await FullSyncService.sendPendingTrazabilidadToServer(sucursal, idUsuario);
+          await FullSyncService.sendPendingTrazabilidadToServer(
+            sucursal,
+            idUsuario,
+          );
         if (trazabilidadResult.success && trazabilidadResult.sent > 0) {
           console.log(
             `[BackgroundSync] ✅ Trazabilidad enviada: ${trazabilidadResult.sent}`,
