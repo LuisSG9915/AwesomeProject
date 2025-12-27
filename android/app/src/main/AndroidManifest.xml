@@ -43,5 +43,15 @@
         <action android:name="android.intent.action.BOOT_COMPLETED"/>
       </intent-filter>
     </receiver>
+
+    <!-- Servicio headless para Tasker -->
+    <!-- CRÍTICO: foregroundServiceType es OBLIGATORIO en Android 14+ (API 34+) -->
+    <service android:name=".TaskerHeadlessService" android:foregroundServiceType="dataSync" android:exported="false" />
+
+    <receiver android:name=".TaskerBroadcastReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="com.awesomeproject.SYNC_DATOS" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>

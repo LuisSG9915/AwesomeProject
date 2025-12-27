@@ -286,16 +286,18 @@ function AppContent({ navigation }: { navigation: any }) {
 
       // 3. Iniciar sincronización automática
       // Si no hay permisos, ForegroundService no iniciará pero la app seguirá funcionando
-      console.log('[App] 🚀 Iniciando BackgroundSyncService...');
-      BackgroundSyncService.start();
+      // DESHABILITADO: Usando Tasker para sincronización en segundo plano
+      // console.log('[App] 🚀 Iniciando BackgroundSyncService...');
+      // BackgroundSyncService.start();
     };
 
     initializeApp();
 
     // Detener sincronización al desmontar
-    return () => {
-      BackgroundSyncService.stop();
-    };
+    // DESHABILITADO: BackgroundSyncService no se está usando
+    // return () => {
+    //   BackgroundSyncService.stop();
+    // };
   }, []);
 
   const handleLogout = useCallback(() => {

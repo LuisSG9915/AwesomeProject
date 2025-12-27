@@ -8,7 +8,7 @@ import { name as appName } from './app.json';
 import BackgroundFetch from 'react-native-background-fetch';
 
 AppRegistry.registerComponent(appName, () => App);
-
+AppRegistry.registerHeadlessTask('TaskerSync', () => require('./services/TaskerSyncService'));
 /**
  * HeadlessTask para sincronización en segundo plano (BackgroundFetch)
  * Se ejecuta como respaldo cada ~15 minutos cuando la app está cerrada
