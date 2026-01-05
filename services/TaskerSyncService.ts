@@ -86,8 +86,8 @@ module.exports = async (taskData: any) => {
         '[TaskerSync] 📊 Ejecutando sincronización incremental forzada...',
       );
 
-      // Ejecutar sincronización incremental directamente
-      const result = await FullSyncService.syncIncremental(
+      // Ejecutar sincronización incremental CON TIMEOUT de 30 segundos
+      const syncPromise = FullSyncService.syncIncremental(
         sucursal,
         progress => {
           console.log(
@@ -98,6 +98,17 @@ module.exports = async (taskData: any) => {
         },
       );
 
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          console.log(
+            '[TaskerSync] ⏱️ TIMEOUT en sincronización incremental - Cancelando después de 30s',
+          );
+          reject(new Error('Timeout de 30s excedido para sincronización incremental'));
+        }, 30000);
+      });
+
+      const result = await Promise.race([syncPromise, timeoutPromise]);
+
       if (result.success) {
         console.log('[TaskerSync] ✅ Sincronización incremental completada');
       } else {
@@ -106,11 +117,15 @@ module.exports = async (taskData: any) => {
           result.error,
         );
       }
-    } catch (error) {
-      console.error(
-        '[TaskerSync] ❌ Error en sincronización incremental:',
-        error,
-      );
+    } catch (error: any) {
+      if (error.message && error.message.includes('Timeout')) {
+        console.log('[TaskerSync] ⚠️ Sincronización incremental cancelada por timeout');
+      } else {
+        console.error(
+          '[TaskerSync] ❌ Error en sincronización incremental:',
+          error,
+        );
+      }
     }
 
     // 6. Arrastres de bitácoras y trazabilidad AL FINAL (NO CRÍTICOS)

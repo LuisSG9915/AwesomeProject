@@ -238,6 +238,14 @@ class FullSyncService {
       '[FullSyncService] 🔒 Sincronización incremental iniciada (mutex activado)',
     );
 
+    // TIMEOUT DE SEGURIDAD: Liberar mutex automáticamente después de 40 segundos
+    const safeguardTimeout = setTimeout(() => {
+      console.warn(
+        '[FullSyncService] ⏱️ TIMEOUT DE SEGURIDAD - Liberando mutex después de 40s (posible deadlock)',
+      );
+      this.isSyncing = false;
+    }, 40000);
+
     try {
       if (!this.isInitialized) {
         await this.initialize();
@@ -930,6 +938,9 @@ class FullSyncService {
       console.error('[FullSyncService] Error crítico en incremental:', error);
       return { success: false, error: error?.message || 'Error crítico' };
     } finally {
+      // Limpiar timeout de seguridad
+      clearTimeout(safeguardTimeout);
+      
       // MUTEX: Liberar el lock siempre
       this.isSyncing = false;
       console.log(

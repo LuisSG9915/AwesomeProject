@@ -1228,6 +1228,10 @@ class BitacoraService {
       );
       // =====================================
 
+      // Crear AbortController para timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -1235,7 +1239,9 @@ class BitacoraService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       // ============ DEBUG LOGS ============
       console.log('[BitacoraService] 📡 Response status:', response.status);
@@ -1345,6 +1351,10 @@ class BitacoraService {
       );
       // =====================================
 
+      // Crear AbortController para timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 segundos
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -1352,7 +1362,9 @@ class BitacoraService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       // ============ DEBUG LOGS ============
       console.log(
