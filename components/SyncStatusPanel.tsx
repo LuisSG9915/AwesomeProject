@@ -205,13 +205,13 @@ export default function SyncStatusPanel({
   // Modo completo
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      {/* <View style={styles.header}>
         <View style={styles.headerLeft}>
           {getStatusIcon()}
           <Text style={styles.title}>Sincronización Automática</Text>
         </View>
-        <View style={styles.headerRight}>
-          {/* <TouchableOpacity
+        <View style={styles.headerRight}> */}
+      {/* <TouchableOpacity
             style={[
               styles.syncButton,
               state.status === 'syncing' && styles.syncButtonDisabled,
@@ -226,11 +226,11 @@ export default function SyncStatusPanel({
               size={18}
             />
           </TouchableOpacity> */}
-        </View>
-      </View>
+      {/* </View>
+      </View> */}
 
       {/* Toggle de sincronización persistente */}
-      <View style={styles.toggleContainer}>
+      {/* <View style={styles.toggleContainer}>
         <View style={styles.toggleLeft}>
           <Icon
             name="battery-charging-full"
@@ -253,7 +253,7 @@ export default function SyncStatusPanel({
           trackColor={{ false: COLORS.muted, true: COLORS.primaryLight }}
           thumbColor={isBackgroundSyncEnabled ? COLORS.primary : '#f4f3f4'}
         />
-      </View>
+      </View> */}
 
       <View style={styles.content}>
         {/* Estado actual */}
