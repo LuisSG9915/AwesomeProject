@@ -15,8 +15,11 @@ import com.facebook.react.HeadlessJsTaskService;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.jstasks.HeadlessJsTaskConfig;
 import javax.annotation.Nullable;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class TaskerHeadlessService extends HeadlessJsTaskService {
     private static final String TAG = "TaskerHeadlessService";
@@ -24,6 +27,7 @@ public class TaskerHeadlessService extends HeadlessJsTaskService {
     private static final int NOTIFICATION_ID = 9999;
     private PowerManager.WakeLock wakeLock = null;
     private WifiManager.WifiLock wifiLock = null;
+    private Timer heartbeatTimer = null;
 
     @Override
     public void onCreate() {
@@ -184,8 +188,8 @@ public class TaskerHeadlessService extends HeadlessJsTaskService {
 
     private void startNativeHeartbeat() {
         if (heartbeatTimer != null) return;
-        heartbeatTimer = new java.util.Timer();
-        heartbeatTimer.scheduleAtFixedRate(new java.util.TimerTask() {
+        heartbeatTimer = new Timer();
+        heartbeatTimer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
                 Log.d(TAG, "💓 NATIVE HEARTBEAT - Servicio Java sigue vivo");

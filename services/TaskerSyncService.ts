@@ -8,9 +8,9 @@ import { batteryOptimizationService } from './BatteryOptimization';
 const TASKER_MUTEX_KEY = '@tasker_sync_mutex';
 const TASKER_LAST_SYNC_KEY = '@tasker_last_sync_time';
 
-// Tiempo máximo que un mutex puede estar activo antes de liberarse automáticamente (5 minutos)
-// Aumentado de 60s a 300s para permitir sincronizaciones largas en background sin traslapes
-const MUTEX_MAX_AGE_MS = 5 * 60 * 1000;
+// Tiempo máximo que un mutex puede estar activo antes de liberarse automáticamente (90 segundos)
+// Reducido a 90s para liberar mutex huérfanos rápido sin bloquear la app
+const MUTEX_MAX_AGE_MS = 90 * 1000;
 
 /**
  * Verifica y limpia mutex huérfanos (por si hubo un crash)
