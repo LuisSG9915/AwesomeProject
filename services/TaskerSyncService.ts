@@ -1,32 +1,177 @@
 import FullSyncService from './FullSyncService';
 import AuthService from './AuthService';
 import BackgroundSyncService from './BackgroundSyncService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { batteryOptimizationService } from './BatteryOptimization';
 
-// Mutex global para evitar ejecuciones concurrentes de Tasker
-let isTaskerSyncing = false;
+// Clave para mutex persistente en AsyncStorage
+const TASKER_MUTEX_KEY = '@tasker_sync_mutex';
+const TASKER_LAST_SYNC_KEY = '@tasker_last_sync_time';
+
+// Tiempo máximo que un mutex puede estar activo antes de liberarse automáticamente (5 minutos)
+// Aumentado de 60s a 300s para permitir sincronizaciones largas en background sin traslapes
+const MUTEX_MAX_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * Verifica y limpia mutex huérfanos (por si hubo un crash)
+ * Retorna true si el mutex está libre, false si hay una sincronización activa válida
+ */
+async function checkAndCleanMutex(): Promise<boolean> {
+  try {
+    const mutexData = await AsyncStorage.getItem(TASKER_MUTEX_KEY);
+    if (!mutexData) {
+      return true; // No hay mutex, está libre
+    }
+
+    const { timestamp, active } = JSON.parse(mutexData);
+    const age = Date.now() - timestamp;
+
+    if (!active) {
+      return true; // Mutex marcado como inactivo
+    }
+
+    // IMPORTANTE: En background, JavaScript puede suspenderse y el mutex nunca se libera
+    // Por eso usamos un timeout más corto (60s) y siempre liberamos mutex viejos
+    if (age > MUTEX_MAX_AGE_MS) {
+      console.log(
+        `[TaskerSync] 🚨 Mutex huérfano detectado (edad: ${Math.round(
+          age / 1000,
+        )}s) - Liberando automáticamente`,
+      );
+      await AsyncStorage.removeItem(TASKER_MUTEX_KEY);
+      // Notificar a BackgroundSyncService que el mutex fue liberado por timeout
+      try {
+        BackgroundSyncService.notifySyncEnd(
+          'tasker',
+          false,
+          'Mutex liberado por timeout',
+        );
+      } catch (e) {
+        // Ignorar errores de notificación
+      }
+      return true; // Mutex muy viejo, probablemente de un crash o suspensión
+    }
+
+    console.log(
+      `[TaskerSync] ⚠️ Mutex activo detectado (edad: ${Math.round(
+        age / 1000,
+      )}s) - Sincronización en curso`,
+    );
+    return false; // Mutex activo y válido
+  } catch (error) {
+    console.error('[TaskerSync] Error verificando mutex:', error);
+    return true; // En caso de error, permitir continuar
+  }
+}
+
+/**
+ * Establece el mutex persistente
+ */
+async function setMutex(active: boolean): Promise<void> {
+  try {
+    if (active) {
+      await AsyncStorage.setItem(
+        TASKER_MUTEX_KEY,
+        JSON.stringify({
+          timestamp: Date.now(),
+          active: true,
+        }),
+      );
+    } else {
+      await AsyncStorage.removeItem(TASKER_MUTEX_KEY);
+    }
+  } catch (error) {
+    console.error('[TaskerSync] Error estableciendo mutex:', error);
+  }
+}
+
+/**
+ * Guarda la última sincronización exitosa
+ */
+async function saveLastSyncTime(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(TASKER_LAST_SYNC_KEY, new Date().toISOString());
+  } catch (error) {
+    console.error('[TaskerSync] Error guardando última sincronización:', error);
+  }
+}
+
+/**
+ * Obtiene la última sincronización exitosa
+ */
+async function getLastSyncTime(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(TASKER_LAST_SYNC_KEY);
+  } catch (error) {
+    return null;
+  }
+}
 
 // Esta función se ejecuta en segundo plano sin abrir la app visualmente
 module.exports = async (taskData: any) => {
-  console.log('[TaskerSync] 🚀 Iniciando servicio de sincronización...');
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString();
 
-  // GUARD: Evitar ejecuciones concurrentes de Tasker
-  if (isTaskerSyncing) {
-    console.log(
-      '[TaskerSync] ⚠️ Ya hay una sincronización de Tasker en curso - OMITIENDO',
-    );
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('[TaskerSync] 🚀 INICIANDO SERVICIO DE SINCRONIZACIÓN');
+  console.log(`[TaskerSync] Timestamp: ${timestamp}`);
+  console.log(
+    `[TaskerSync] Hora local: ${new Date().toLocaleTimeString('es-MX')}`,
+  );
+  console.log('═══════════════════════════════════════════════════════');
+
+  // GUARD: Verificar mutex persistente (el mutex en memoria no es confiable en background)
+  // El mutex persistente tiene auto-limpieza después de 60 segundos
+  const mutexFree = await checkAndCleanMutex();
+  if (!mutexFree) {
+    console.log('[TaskerSync] ⚠️ Mutex persistente activo - OMITIENDO');
     return;
   }
 
-  isTaskerSyncing = true;
-  console.log('[TaskerSync] 🔒 Mutex de Tasker activado');
+  // Verificar exención de optimización de batería (CRÍTICO para background)
+  try {
+    const isExempt =
+      await batteryOptimizationService.isIgnoringBatteryOptimizations();
+    if (!isExempt) {
+      console.warn(
+        '[TaskerSync] ⚠️ App NO está exenta de optimización de batería - puede fallar en background',
+      );
+      console.warn(
+        '[TaskerSync] 💡 Solicita exención desde Configuración > Apps > [App] > Batería > Sin restricciones',
+      );
+    } else {
+      console.log('[TaskerSync] ✅ App exenta de optimización de batería');
+    }
+  } catch (e) {
+    console.log('[TaskerSync] ⚠️ No se pudo verificar exención de batería:', e);
+  }
 
-  // Timeout global de 56 segundos para toda la sincronización
-  const globalTimeout = setTimeout(() => {
-    console.log(
-      '[TaskerSync] ⏱️ TIMEOUT GLOBAL - Liberando mutex después de 56 segundos',
+  // Mostrar última sincronización exitosa
+  const lastSync = await getLastSyncTime();
+  if (lastSync) {
+    const lastSyncDate = new Date(lastSync);
+    const timeSince = Math.round(
+      (Date.now() - lastSyncDate.getTime()) / 1000 / 60,
     );
-    isTaskerSyncing = false;
-  }, 56000);
+    console.log(
+      `[TaskerSync] ⏰ Última sincronización exitosa: hace ${timeSince} minutos`,
+    );
+  }
+
+  // Activar mutex persistente (el mutex en memoria no es confiable en background)
+  await setMutex(true);
+  console.log('[TaskerSync] 🔒 Mutex persistente activado');
+
+  // Notificar a BackgroundSyncService para actualizar UI
+  BackgroundSyncService.notifySyncStart('tasker');
+
+  // HEARTBEAT: Log cada 5 segundos para verificar si el JS se suspende
+  const heartbeatId = setInterval(() => {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.log(
+      `[TaskerSync] 💓 Heartbeat - Sync en curso (${elapsed}s elapsed)`,
+    );
+  }, 5000);
 
   try {
     // 1. Restaurar sesión para saber qué sucursal sincronizar
@@ -53,41 +198,35 @@ module.exports = async (taskData: any) => {
     // 3. Inicializar el servicio de sincronización si es necesario
     await FullSyncService.initialize();
 
-    // 4. Ejecutar arrastres con timeout de 8 segundos cada uno
+    // 4. Ejecutar arrastres DIRECTAMENTE (sin setTimeout que se cuelga en background)
     console.log('[TaskerSync] 📤 Iniciando arrastre de ventas...');
-    await executeWithTimeout(
-      'Ventas',
-      () => FullSyncService.sendPendingVentasToServer(sucursal, idUsuario),
-      8000,
-    );
+    try {
+      await FullSyncService.sendPendingVentasToServer(sucursal, idUsuario);
+      console.log('[TaskerSync] ✅ Ventas completado');
+    } catch (e) {
+      console.log('[TaskerSync] ⚠️ Ventas error:', e);
+    }
 
     console.log('[TaskerSync] 📤 Iniciando arrastre de cobranza...');
-    await executeWithTimeout(
-      'Cobranza',
-      () => FullSyncService.sendPendingCobranzaToServer(sucursal, idUsuario),
-      8000,
-    );
+    try {
+      await FullSyncService.sendPendingCobranzaToServer(sucursal, idUsuario);
+      console.log('[TaskerSync] ✅ Cobranza completado');
+    } catch (e) {
+      console.log('[TaskerSync] ⚠️ Cobranza error:', e);
+    }
 
     // 5. Ejecutar sincronización incremental forzada (LO MÁS IMPORTANTE)
     // Esta es la sincronización que descarga datos del servidor
+    // NOTA: NO usar setTimeout aquí porque en background JavaScript se suspende
     console.log(
       '[TaskerSync] === INICIANDO FASE DE SINCRONIZACIÓN INCREMENTAL ===',
     );
-    console.log(
-      '[TaskerSync] 🔄 Iniciando sincronización incremental forzada...',
-    );
 
-    // Esperar un momento para asegurar que no haya conflictos
-    await new Promise(resolve => setTimeout(() => resolve(void 0), 1000));
-
-    // Ejecutar sincronización incremental forzada (sin depender de BackgroundSync)
+    // Ejecutar sincronización incremental directamente (sin delays ni timeouts problemáticos)
     try {
-      console.log(
-        '[TaskerSync] 📊 Ejecutando sincronización incremental forzada...',
-      );
+      console.log('[TaskerSync] 📊 Ejecutando syncIncremental...');
 
-      // Ejecutar sincronización incremental CON TIMEOUT de 30 segundos
-      const syncPromise = FullSyncService.syncIncremental(
+      const result = await FullSyncService.syncIncremental(
         sucursal,
         progress => {
           console.log(
@@ -96,124 +235,80 @@ module.exports = async (taskData: any) => {
             )}%)`,
           );
         },
+        'tasker',
       );
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          console.log(
-            '[TaskerSync] ⏱️ TIMEOUT en sincronización incremental - Cancelando después de 30s',
-          );
-          reject(new Error('Timeout de 30s excedido para sincronización incremental'));
-        }, 30000);
-      });
-
-      const result = await Promise.race([syncPromise, timeoutPromise]);
 
       if (result.success) {
         console.log('[TaskerSync] ✅ Sincronización incremental completada');
       } else {
         console.log(
-          '[TaskerSync] ⚠️ Sincronización incremental omitida:',
+          '[TaskerSync] ⚠️ Sincronización incremental con error:',
           result.error,
         );
       }
     } catch (error: any) {
-      if (error.message && error.message.includes('Timeout')) {
-        console.log('[TaskerSync] ⚠️ Sincronización incremental cancelada por timeout');
-      } else {
-        console.error(
-          '[TaskerSync] ❌ Error en sincronización incremental:',
-          error,
-        );
-      }
+      console.error(
+        '[TaskerSync] ❌ Error en sincronización incremental:',
+        error,
+      );
     }
 
     // 6. Arrastres de bitácoras y trazabilidad AL FINAL (NO CRÍTICOS)
-    // Si fallan o se congelan, no afectan la sincronización principal
-    console.log(
-      '[TaskerSync] 📤 Iniciando arrastre de bitácoras (no crítico)...',
-    );
+    // Ejecutar directamente sin setTimeout (se cuelga en background)
+    console.log('[TaskerSync] 📤 Iniciando arrastre de bitácoras...');
     try {
-      await Promise.race([
-        executeWithTimeout(
-          'Bitácoras',
-          () => FullSyncService.enviarBitacorasPendientes(),
-          5000, // Solo 5 segundos para bitácoras
-        ),
-        new Promise(resolve => setTimeout(() => resolve(null), 6000)), // Timeout adicional
-      ]);
-      console.log('[TaskerSync] ✅ Arrastre de bitácoras completado');
-    } catch (error) {
-      console.log('[TaskerSync] ⚠️ Bitácoras omitidas (no crítico)');
+      await FullSyncService.enviarBitacorasPendientes();
+      console.log('[TaskerSync] ✅ Bitácoras completado');
+    } catch (e) {
+      console.log('[TaskerSync] ⚠️ Bitácoras error (no crítico):', e);
     }
 
-    console.log(
-      '[TaskerSync] 📤 Iniciando arrastre de trazabilidad (no crítico)...',
-    );
+    console.log('[TaskerSync] 📤 Iniciando arrastre de trazabilidad...');
     try {
-      await Promise.race([
-        executeWithTimeout(
-          'Trazabilidad',
-          () =>
-            FullSyncService.sendPendingTrazabilidadToServer(
-              sucursal,
-              idUsuario,
-            ),
-          5000, // Solo 5 segundos para trazabilidad
-        ),
-        new Promise(resolve => setTimeout(() => resolve(null), 6000)), // Timeout adicional
-      ]);
-      console.log('[TaskerSync] ✅ Arrastre de trazabilidad completado');
-    } catch (error) {
-      console.log('[TaskerSync] ⚠️ Trazabilidad omitida (no crítico)');
+      await FullSyncService.sendPendingTrazabilidadToServer(
+        sucursal,
+        idUsuario,
+      );
+      console.log('[TaskerSync] ✅ Trazabilidad completado');
+    } catch (e) {
+      console.log('[TaskerSync] ⚠️ Trazabilidad error (no crítico):', e);
     }
 
-    console.log('[TaskerSync] ✅ Sincronización COMPLETADA exitosamente.');
-  } catch (error) {
+    // Guardar última sincronización exitosa
+    await saveLastSyncTime();
+
+    // Notificar éxito a BackgroundSyncService para actualizar UI
+    BackgroundSyncService.notifySyncEnd('tasker', true);
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+    console.log('┌─────────────────────────────────────────────────────┐');
+    console.log('│ [TaskerSync] ✅ SINCRONIZACIÓN COMPLETADA EXITOSAMENTE');
+    console.log(`│ Duración total: ${duration} segundos`);
+    console.log(`│ Hora: ${new Date().toLocaleTimeString('es-MX')}`);
+    console.log('└─────────────────────────────────────────────────────┘');
+  } catch (error: any) {
+    const duration = Math.round((Date.now() - startTime) / 1000);
     console.error(
-      '[TaskerSync] ❌ Error crítico durante la sincronización:',
+      `[TaskerSync] ❌ ERROR CRÍTICO después de ${duration}s:`,
       error,
     );
-  } finally {
-    // Limpiar el timeout global
-    clearTimeout(globalTimeout);
 
-    // CRÍTICO: Liberar el mutex siempre, incluso si hay error
-    isTaskerSyncing = false;
-    console.log('[TaskerSync] 🔓 Mutex de Tasker liberado');
+    // Notificar error a BackgroundSyncService
+    BackgroundSyncService.notifySyncEnd(
+      'tasker',
+      false,
+      error?.message || 'Error desconocido',
+    );
+  } finally {
+    // Detener heartbeat
+    if (heartbeatId) {
+      clearInterval(heartbeatId);
+    }
+
+    // Liberar mutex persistente
+    await setMutex(false);
+    console.log('[TaskerSync] 🔓 Mutex persistente liberado');
   }
 };
 
-/**
- * Ejecuta una función con un timeout específico
- * @param name Nombre de la operación para logs
- * @param fn Función a ejecutar
- * @param timeoutMs Timeout en milisegundos
- */
-async function executeWithTimeout<T>(
-  name: string,
-  fn: () => Promise<T>,
-  timeoutMs: number,
-): Promise<T | null> {
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      console.log(
-        `[TaskerSync] ⏱️ TIMEOUT en ${name} - Cancelando después de ${timeoutMs}ms`,
-      );
-      reject(new Error(`Timeout de ${timeoutMs}ms excedido para ${name}`));
-    }, timeoutMs);
-  });
-
-  try {
-    const result = await Promise.race([fn(), timeoutPromise]);
-    console.log(`[TaskerSync] ✅ ${name} completado exitosamente`);
-    return result;
-  } catch (error: any) {
-    if (error.message.includes('Timeout')) {
-      console.log(`[TaskerSync] ⚠️ ${name} fue cancelado por timeout`);
-      return null;
-    }
-    console.error(`[TaskerSync] ❌ Error en ${name}:`, error);
-    return null;
-  }
-}
+console.log('═══════════════════════════════════════════════════════');

@@ -41,6 +41,7 @@ import SyncStatusPanel from './components/SyncStatusPanel';
 import { bitacoraService } from './services/BitacoraService';
 import TrazabilidadService from './services/TrazabilidadService';
 import NotificationPermissionService from './services/NotificationPermissionService';
+import { batteryOptimizationService } from './services/BatteryOptimization';
 import {
   APP_NAME,
   COLORS,
@@ -284,7 +285,15 @@ function AppContent({ navigation }: { navigation: any }) {
         );
       }
 
-      // 3. Iniciar sincronización automática
+      // 3. Solicitar exención de optimización de batería (CRÍTICO para background)
+      console.log('[App] 🔋 Verificando optimización de batería...');
+      try {
+        await batteryOptimizationService.ensureBatteryOptimizationExemption();
+      } catch (error) {
+        console.warn('[App] ⚠️ Error con optimización de batería:', error);
+      }
+
+      // 4. Iniciar sincronización automática
       // Si no hay permisos, ForegroundService no iniciará pero la app seguirá funcionando
       // DESHABILITADO: Usando Tasker para sincronización en segundo plano
       // console.log('[App] 🚀 Iniciando BackgroundSyncService...');

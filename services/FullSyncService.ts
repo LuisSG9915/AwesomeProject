@@ -7,11 +7,54 @@ import { deviceInfoService } from './DeviceInfoService';
 
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
+// CRÍTICO: Fetch con timeout usando AbortController
+// En background, Android puede suspender las conexiones de red indefinidamente
+// Este wrapper garantiza que el fetch no se quede colgado más de 15 segundos
+const FETCH_TIMEOUT_MS = 15000; // 15 segundos
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.log(
+      `[FetchTimeout] ⏰ Timeout de ${timeoutMs}ms alcanzado para: ${url.substring(
+        0,
+        80,
+      )}...`,
+    );
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(
+        `TIMEOUT: La solicitud tardó más de ${
+          timeoutMs / 1000
+        }s - red suspendida por Android`,
+      );
+    }
+    throw error;
+  }
+}
+
 class FullSyncService {
   private realm: Realm | null = null;
   private isInitialized = false;
   private apiBaseUrl = 'https://cbinfo.no-ip.info:9011';
   private isSyncing = false; // MUTEX: Prevenir sincronizaciones concurrentes
+  private syncStartTime: number = 0; // Timestamp para auto-limpieza del mutex
+  private readonly SYNC_MUTEX_MAX_AGE_MS = 45000; // 45 segundos máximo para el mutex
   private initializePromise: Promise<void> | null = null; // MUTEX: Prevenir inicializaciones concurrentes
   private isSendingVentas = false; // MUTEX: Prevenir arrastre concurrente de ventas
   private isSendingCobranza = false; // MUTEX: Prevenir arrastre concurrente de cobranza
@@ -35,7 +78,7 @@ class FullSyncService {
         this.realm = await Realm.open({
           path: 'FullSyncDB',
           schema: ALL_SCHEMAS,
-          schemaVersion: 10, // v10: TrazabilidadMovil para tracking de clicks
+          schemaVersion: 11, // v11: origenSync en BitacoraSesion para tracking de tipo de sincronización
           onMigration: (oldRealm: Realm, newRealm: Realm) => {
             const newCartera = newRealm.objects('Cartera');
             for (let i = 0; i < newCartera.length; i++) {
@@ -224,27 +267,39 @@ class FullSyncService {
   async syncIncremental(
     sucursal: number = 1,
     onProgress?: SyncProgressCallback,
+    origenSync:
+      | 'manual'
+      | 'tasker'
+      | 'foreground_service'
+      | 'background_interval'
+      | 'background_fetch' = 'manual',
   ): Promise<{ success: boolean; error?: string }> {
-    // MUTEX: Prevenir sincronizaciones concurrentes
+    // MUTEX: Prevenir sincronizaciones concurrentes CON AUTO-LIMPIEZA
+    // setTimeout no funciona en background, así que usamos timestamp
     if (this.isSyncing) {
-      console.warn(
-        '[FullSyncService] Ya hay una sincronización en curso - IGNORANDO incremental',
-      );
-      return { success: false, error: 'Sincronización ya en curso' };
+      const mutexAge = Date.now() - this.syncStartTime;
+      if (mutexAge > this.SYNC_MUTEX_MAX_AGE_MS) {
+        console.warn(
+          `[FullSyncService] 🚨 Mutex huérfano detectado (edad: ${Math.round(
+            mutexAge / 1000,
+          )}s) - Liberando automáticamente`,
+        );
+        this.isSyncing = false;
+      } else {
+        console.warn(
+          `[FullSyncService] Ya hay una sincronización en curso (edad: ${Math.round(
+            mutexAge / 1000,
+          )}s) - IGNORANDO`,
+        );
+        return { success: false, error: 'Sincronización ya en curso' };
+      }
     }
 
     this.isSyncing = true;
+    this.syncStartTime = Date.now();
     console.log(
-      '[FullSyncService] 🔒 Sincronización incremental iniciada (mutex activado)',
+      `[FullSyncService] 🔒 Sincronización incremental iniciada (origen: ${origenSync})`,
     );
-
-    // TIMEOUT DE SEGURIDAD: Liberar mutex automáticamente después de 40 segundos
-    const safeguardTimeout = setTimeout(() => {
-      console.warn(
-        '[FullSyncService] ⏱️ TIMEOUT DE SEGURIDAD - Liberando mutex después de 40s (posible deadlock)',
-      );
-      this.isSyncing = false;
-    }, 40000);
 
     try {
       if (!this.isInitialized) {
@@ -275,6 +330,7 @@ class FullSyncService {
       // ========================================
       const sesionBitacoraId = await bitacoraService.registrarInicioSesion(
         'incremental',
+        origenSync,
       );
       console.log(
         `[FullSyncService] 📝 Sesión de bitácora iniciada: ${sesionBitacoraId}`,
@@ -312,6 +368,9 @@ class FullSyncService {
         {
           name: 'ClientesIncremental',
           run: async () => {
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 1: Iniciando...',
+            );
             const tableName = 'ClienteFull';
             const last = this.getLastSyncedAr(tableName) || new Date(0);
             const fechaInicial = this.formatDateTimeForApi(last);
@@ -321,16 +380,35 @@ class FullSyncService {
               fechaInicial,
             )}`;
 
-            // console.log('[Incremental] Clientes desde', fechaInicial, url);
-            const response = await fetch(url, {
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 2: URL construida',
+              url,
+            );
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 3: Iniciando fetch...',
+            );
+
+            const response = await fetchWithTimeout(url, {
               headers: { accept: 'application/octet-stream' },
             });
+
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 4: Fetch completado, status:',
+              response.status,
+            );
+
             if (!response.ok) {
               throw new Error(`HTTP ${response.status} Clientes`);
             }
 
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 5: Parseando JSON...',
+            );
             const clientes = await response.json();
-            console.log({ clientes });
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 6: JSON parseado, registros:',
+              Array.isArray(clientes) ? clientes.length : 0,
+            );
 
             const registrosLeidos = Array.isArray(clientes)
               ? clientes.length
@@ -338,6 +416,9 @@ class FullSyncService {
             let registrosGuardados = 0;
             let registrosActualizados = 0;
 
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 7: Guardando en Realm...',
+            );
             this.realm!.write(() => {
               for (const cliente of clientes) {
                 const existing = this.realm!.objectForPrimaryKey(
@@ -375,9 +456,9 @@ class FullSyncService {
               }
             });
 
-            // console.log(
-            //   `[Incremental] Clientes leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
-            // );
+            console.log(
+              '[Incremental] 🔵 ClientesIncremental PASO 8: ✅ COMPLETADO',
+            );
 
             return {
               tabla: tableName,
@@ -402,7 +483,7 @@ class FullSyncService {
 
             console.log('[Incremental] Precios desde', fechaInicial, url);
 
-            const response = await fetch(url, {
+            const response = await fetchWithTimeout(url, {
               headers: { accept: 'application/octet-stream' },
             });
             if (!response.ok) {
@@ -464,7 +545,7 @@ class FullSyncService {
 
             console.log('[Incremental] Cartera desde', fechaInicial, url);
 
-            const response = await fetch(url, {
+            const response = await fetchWithTimeout(url, {
               headers: { accept: 'application/octet-stream' },
             });
             if (!response.ok) {
@@ -530,7 +611,7 @@ class FullSyncService {
 
             console.log('[Incremental] Ventas desde', fechaInicial, url);
 
-            const response = await fetch(url, {
+            const response = await fetchWithTimeout(url, {
               headers: { accept: 'application/octet-stream' },
             });
             if (!response.ok) {
@@ -653,6 +734,9 @@ class FullSyncService {
         {
           name: 'InventarioIncremental',
           run: async () => {
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 1: Iniciando...',
+            );
             const tableName = 'Inventario';
 
             // Formatear fecha en horario local mexicano (YYYY-MM-DD HH:mm:ss)
@@ -671,22 +755,46 @@ class FullSyncService {
               fechaLocal,
             )}`;
 
-            console.log('[Incremental] Inventario desde', url);
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 2: URL construida',
+              url,
+            );
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 3: Iniciando fetch...',
+            );
 
-            const response = await fetch(url, {
+            const response = await fetchWithTimeout(url, {
               headers: { accept: 'application/octet-stream' },
             });
+
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 4: Fetch completado, status:',
+              response.status,
+            );
+
             if (!response.ok) {
               throw new Error(`HTTP ${response.status} Inventario`);
             }
 
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 5: Parseando JSON...',
+            );
+            // CRÍTICO: El parseo de JSON también puede colgarse si la red está mal
             const inventario = await response.json();
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 6: JSON parseado, registros:',
+              Array.isArray(inventario) ? inventario.length : 0,
+            );
+
             const registrosLeidos = Array.isArray(inventario)
               ? inventario.length
               : 0;
             let registrosGuardados = 0;
             let registrosActualizados = 0;
 
+            console.log(
+              '[Incremental] 📦 InventarioIncremental PASO 7: Guardando en Realm...',
+            );
             this.realm!.write(() => {
               for (const item of inventario) {
                 const existing = this.realm!.objectForPrimaryKey(
@@ -718,9 +826,8 @@ class FullSyncService {
             });
 
             console.log(
-              `[Incremental] Inventario leídos=${registrosLeidos}, guardados=${registrosGuardados}, actualizados=${registrosActualizados}`,
+              '[Incremental] 📦 InventarioIncremental PASO 8: ✅ COMPLETADO',
             );
-
             return {
               tabla: tableName,
               endpoint: url,
@@ -738,25 +845,17 @@ class FullSyncService {
       let tablasConError = 0;
       let totalRegistros = 0;
 
-      // Helper para ejecutar con timeout de 7 segundos
-      const runWithTimeout = async (
-        taskFn: () => Promise<IncrementalTaskResult>,
-        taskName: string,
-      ): Promise<IncrementalTaskResult> => {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(
-              new Error(`Timeout de 7 segundos excedido para ${taskName}`),
-            );
-          }, 7000);
-        });
-
-        return Promise.race([taskFn(), timeoutPromise]);
-      };
+      // NOTA: Se eliminó runWithTimeout porque setTimeout NO funciona en background
+      // Las tareas se ejecutan directamente - los timeouts de red manejan errores
 
       for (const task of tasks) {
         currentTask++;
+        console.log(
+          `[Incremental] ═══ TAREA ${currentTask}/${totalTasks}: ${task.name} ═══`,
+        );
         const fechaInicioTask = new Date();
+
+        console.log(`[Incremental] 📋 ${task.name} - Notificando progreso...`);
         notify(
           task.name,
           currentTask,
@@ -765,6 +864,7 @@ class FullSyncService {
           `Sincronizando ${task.name}...`,
         );
 
+        console.log(`[Incremental] 📋 ${task.name} - Registrando bitácora...`);
         // Registrar inicio de bitácora para esta tabla
         const bitacoraTablaId = await bitacoraService.registrarInicioSync(
           task.name,
@@ -773,14 +873,21 @@ class FullSyncService {
           syncLogId,
           'background',
         );
+        console.log(
+          `[Incremental] 📋 ${task.name} - Bitácora registrada: ${bitacoraTablaId}`,
+        );
 
         try {
           console.log(
-            `[Incremental] Iniciando ${task.name} con timeout de 7 segundos...`,
+            `[Incremental] 🚀 ${task.name} - Ejecutando task.run()...`,
           );
-          const result = await runWithTimeout(task.run, task.name);
+          const result = await task.run();
+          console.log(`[Incremental] ✅ ${task.name} - task.run() COMPLETADO`);
           const fechaFinalTask = new Date();
 
+          console.log(
+            `[Incremental] 📝 ${task.name} - Guardando en SyncTableLog...`,
+          );
           // Guardar en SyncTableLog (log local existente)
           this.realm!.write(() => {
             this.realm!.create('SyncTableLog', {
@@ -824,19 +931,13 @@ class FullSyncService {
             `${task.name} sincronizado`,
           );
         } catch (error: any) {
+          console.log(`[Incremental] ❌ ${task.name} - ERROR CAPTURADO`);
           const msg = error?.message || 'Error desconocido';
-          const isTimeout = msg.includes('Timeout de 7 segundos');
-
-          if (isTimeout) {
-            console.warn(
-              `[FullSyncService] ⏱️ TIMEOUT en ${task.name} - Omitiendo y continuando con siguiente tabla`,
-            );
-          } else {
-            console.error(
-              `[FullSyncService] ❌ Error incremental en ${task.name}:`,
-              msg,
-            );
-          }
+          console.error(
+            `[FullSyncService] ❌ Error incremental en ${task.name}:`,
+            msg,
+          );
+          console.error(`[FullSyncService] ❌ Stack:`, error?.stack);
 
           errors.push(`${task.name}: ${msg}`);
 
@@ -849,7 +950,7 @@ class FullSyncService {
               fechaInicio: fechaInicioTask,
               fechaFinal: new Date(),
               exitoso: false,
-              razon: isTimeout ? 'TIMEOUT_7_SEGUNDOS' : 'ERROR',
+              razon: 'ERROR',
               registrosLeidos: 0,
               registrosGuardados: 0,
               registrosActualizados: 0,
@@ -874,9 +975,7 @@ class FullSyncService {
             currentTask,
             totalTasks,
             'error',
-            isTimeout
-              ? `Timeout en ${task.name}`
-              : `Error en ${task.name}: ${msg}`,
+            `Error en ${task.name}: ${msg}`,
           );
 
           // Continuar con el siguiente proceso sin detener la sincronización
@@ -938,9 +1037,6 @@ class FullSyncService {
       console.error('[FullSyncService] Error crítico en incremental:', error);
       return { success: false, error: error?.message || 'Error crítico' };
     } finally {
-      // Limpiar timeout de seguridad
-      clearTimeout(safeguardTimeout);
-      
       // MUTEX: Liberar el lock siempre
       this.isSyncing = false;
       console.log(
@@ -957,15 +1053,29 @@ class FullSyncService {
     sucursal: number = 1,
     onProgress?: SyncProgressCallback,
   ): Promise<{ success: boolean; error?: string }> {
-    // MUTEX: Prevenir sincronizaciones concurrentes
+    // MUTEX: Prevenir sincronizaciones concurrentes CON AUTO-LIMPIEZA
+    // setTimeout no funciona en background, así que usamos timestamp
     if (this.isSyncing) {
-      console.warn(
-        '[FullSyncService] Ya hay una sincronización en curso - IGNORANDO',
-      );
-      return { success: false, error: 'Sincronización ya en curso' };
+      const mutexAge = Date.now() - this.syncStartTime;
+      if (mutexAge > this.SYNC_MUTEX_MAX_AGE_MS) {
+        console.warn(
+          `[FullSyncService] 🚨 Mutex huérfano detectado (edad: ${Math.round(
+            mutexAge / 1000,
+          )}s) - Liberando automáticamente`,
+        );
+        this.isSyncing = false;
+      } else {
+        console.warn(
+          `[FullSyncService] Ya hay una sincronización en curso (edad: ${Math.round(
+            mutexAge / 1000,
+          )}s) - IGNORANDO`,
+        );
+        return { success: false, error: 'Sincronización ya en curso' };
+      }
     }
 
     this.isSyncing = true;
+    this.syncStartTime = Date.now();
     console.log(
       '[FullSyncService] 🔒 Sincronización iniciada (mutex activado)',
     );
@@ -1206,7 +1316,7 @@ class FullSyncService {
 
   async getSucursales(): Promise<{ id: number; nombre: string }[]> {
     try {
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         `${this.apiBaseUrl}/api/MovilesVentas/sucursales`,
       );
 
@@ -1876,12 +1986,12 @@ class FullSyncService {
       });
 
       console.log(
-        '[FullSyncService] 📦 Payload ventas:',
+        '[TaskerSync] 📦 Payload ventas:',
         payload.length,
         'registros',
       );
 
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
           accept: 'application/json',
@@ -2049,12 +2159,12 @@ class FullSyncService {
       }));
 
       console.log(
-        '[FullSyncService] 📦 Payload cobranza:',
+        '[TaskerSync] 📦 Payload cobranza:',
         payload.length,
         'registros',
       );
       console.log({ payload });
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
           accept: 'application/json',
@@ -2502,14 +2612,20 @@ class FullSyncService {
         .filtered('enviado == false AND fechaInicio >= $0', sieteDiasAtras)
         .sorted('fechaInicio', false);
 
-      console.log('[FullSyncService] 📊 Trazabilidad pendiente:', trazabilidadPendiente.length);
+      console.log(
+        '[FullSyncService] 📊 Trazabilidad pendiente:',
+        trazabilidadPendiente.length,
+      );
 
       if (trazabilidadPendiente.length === 0) {
         return { success: true, sent: 0 };
       }
 
-      const formatLocalDate = (date: Date | string | null | undefined): string => {
-        const d = date instanceof Date ? date : date ? new Date(date) : new Date();
+      const formatLocalDate = (
+        date: Date | string | null | undefined,
+      ): string => {
+        const d =
+          date instanceof Date ? date : date ? new Date(date) : new Date();
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const dd = String(d.getDate()).padStart(2, '0');
@@ -2519,33 +2635,35 @@ class FullSyncService {
         return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
       };
 
-      const trazabilidadArray = Array.from(trazabilidadPendiente).map((t: any) => ({
-        id: t.id,
-        idMovil: t.idMovil,
-        idUsuario: t.idUsuario,
-        nombreUsuario: t.nombreUsuario,
-        sucursal: t.sucursal,
-        fechaInicio: formatLocalDate(t.fechaInicio),
-        fechaFinal: t.fechaFinal ? formatLocalDate(t.fechaFinal) : null,
-        duracionMs: t.duracionMs,
-        pantalla: t.pantalla,
-        accion: t.accion,
-        tipoElemento: t.tipoElemento,
-        etiqueta: t.etiqueta,
-        exitoso: t.exitoso,
-        codigoError: t.codigoError,
-        mensajeError: t.mensajeError,
-        parametros: t.parametros,
-        resultado: t.resultado,
-        ipDispositivo: t.ipDispositivo,
-        nombreDispositivo: t.nombreDispositivo,
-        sistemaOperativo: t.sistemaOperativo,
-        versionApp: t.versionApp,
-      }));
+      const trazabilidadArray = Array.from(trazabilidadPendiente).map(
+        (t: any) => ({
+          id: t.id,
+          idMovil: t.idMovil,
+          idUsuario: t.idUsuario,
+          nombreUsuario: t.nombreUsuario,
+          sucursal: t.sucursal,
+          fechaInicio: formatLocalDate(t.fechaInicio),
+          fechaFinal: t.fechaFinal ? formatLocalDate(t.fechaFinal) : null,
+          duracionMs: t.duracionMs,
+          pantalla: t.pantalla,
+          accion: t.accion,
+          tipoElemento: t.tipoElemento,
+          etiqueta: t.etiqueta,
+          exitoso: t.exitoso,
+          codigoError: t.codigoError,
+          mensajeError: t.mensajeError,
+          parametros: t.parametros,
+          resultado: t.resultado,
+          ipDispositivo: t.ipDispositivo,
+          nombreDispositivo: t.nombreDispositivo,
+          sistemaOperativo: t.sistemaOperativo,
+          versionApp: t.versionApp,
+        }),
+      );
 
       const url = `${this.apiBaseUrl}/api/TrazabilidadMovil/sp_TrazabilidadMovilArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
-      
-      const response = await fetch(url, {
+
+      const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2555,7 +2673,10 @@ class FullSyncService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[FullSyncService] ❌ Error en respuesta:', response.status);
+        console.error(
+          '[FullSyncService] ❌ Error en respuesta:',
+          response.status,
+        );
         return {
           success: false,
           sent: 0,
@@ -2570,7 +2691,10 @@ class FullSyncService {
         });
       });
 
-      console.log('[FullSyncService] ✅ Trazabilidad enviada:', trazabilidadArray.length);
+      console.log(
+        '[FullSyncService] ✅ Trazabilidad enviada:',
+        trazabilidadArray.length,
+      );
       return { success: true, sent: trazabilidadArray.length };
     } catch (error: any) {
       console.error('[FullSyncService] ❌ Error enviando trazabilidad:', error);

@@ -1,15 +1,15 @@
 /**
  * ForegroundSyncService
- * 
+ *
  * Servicio que ejecuta sincronizaciones en background usando Foreground Service.
  * Esto garantiza que las sincronizaciones se ejecuten incluso con pantalla apagada.
- * 
+ *
  * Ventajas sobre BackgroundFetch:
  * - Funciona con pantalla apagada garantizado
  * - No limitado por Doze Mode
  * - Intervalo configurable (incluso 1 minuto)
  * - Confiable y predecible
- * 
+ *
  * Requisito: Muestra notificación persistente mientras está activo
  */
 
@@ -46,7 +46,11 @@ class ForegroundSyncService {
       ...this.config,
       ...config,
     };
-    console.log('[ForegroundSync] Configurado con intervalo:', this.config.intervalMinutes, 'minutos');
+    console.log(
+      '[ForegroundSync] Configurado con intervalo:',
+      this.config.intervalMinutes,
+      'minutos',
+    );
   }
 
   /**
@@ -54,7 +58,7 @@ class ForegroundSyncService {
    */
   async start(): Promise<void> {
     console.log('[ForegroundSync] 🔵 start() llamado');
-    
+
     if (this.isRunning) {
       console.log('[ForegroundSync] ⚠️ Ya está en ejecución, retornando');
       return;
@@ -62,16 +66,23 @@ class ForegroundSyncService {
 
     // CRÍTICO: Verificar permisos de notificaciones ANTES de iniciar
     // Si no hay permisos, el servicio crasheará la app en Android 13+
-    console.log('[ForegroundSync] 🔐 Verificando permisos de notificaciones...');
-    const hasPermission = await NotificationPermissionService.checkNotificationPermission();
-    
+    console.log(
+      '[ForegroundSync] 🔐 Verificando permisos de notificaciones...',
+    );
+    const hasPermission =
+      await NotificationPermissionService.checkNotificationPermission();
+
     if (!hasPermission) {
       console.warn('[ForegroundSync] ⚠️ No hay permisos de notificaciones');
-      console.warn('[ForegroundSync] ⚠️ ForegroundService NO se iniciará (evitando crash)');
-      console.warn('[ForegroundSync] ℹ️ La sincronización funcionará solo con app en primer plano');
+      console.warn(
+        '[ForegroundSync] ⚠️ ForegroundService NO se iniciará (evitando crash)',
+      );
+      console.warn(
+        '[ForegroundSync] ℹ️ La sincronización funcionará solo con app en primer plano',
+      );
       return;
     }
-    
+
     console.log('[ForegroundSync] ✅ Permisos de notificaciones confirmados');
     console.log('[ForegroundSync] 📋 Preparando opciones del servicio...');
     const options = {
@@ -98,34 +109,57 @@ class ForegroundSyncService {
       console.log('[ForegroundSync] 🔍 Verificando si hay servicio previo...');
       // Verificar si ya hay un servicio en ejecución (función SÍNCRONA, no asíncrona)
       const isAlreadyRunning = BackgroundService.isRunning();
-      console.log('[ForegroundSync] Estado previo:', isAlreadyRunning ? 'CORRIENDO' : 'DETENIDO');
-      
+      console.log(
+        '[ForegroundSync] Estado previo:',
+        isAlreadyRunning ? 'CORRIENDO' : 'DETENIDO',
+      );
+
       if (isAlreadyRunning) {
-        console.log('[ForegroundSync] ⚠️ Servicio ya está corriendo, omitiendo inicio');
+        console.log(
+          '[ForegroundSync] ⚠️ Servicio ya está corriendo, omitiendo inicio',
+        );
         this.isRunning = true;
         return;
       }
 
       console.log('[ForegroundSync] 🚀 Iniciando BackgroundService.start()...');
-      console.log('[ForegroundSync] Configuración:', JSON.stringify(options, null, 2));
+      console.log(
+        '[ForegroundSync] Configuración:',
+        JSON.stringify(options, null, 2),
+      );
       await BackgroundService.start(this.syncTask, options);
       this.isRunning = true;
       console.log('[ForegroundSync] ✅ Servicio iniciado exitosamente');
-      console.log('[ForegroundSync] Intervalo configurado:', this.config.intervalMinutes, 'minutos');
+      console.log(
+        '[ForegroundSync] Intervalo configurado:',
+        this.config.intervalMinutes,
+        'minutos',
+      );
     } catch (error: any) {
       console.error('[ForegroundSync] ❌ Error al iniciar servicio:', error);
       console.error('[ForegroundSync] Error mensaje:', error?.message);
       console.error('[ForegroundSync] Error stack:', error?.stack);
-      
+
       // Si el error es por permisos de notificación, informar claramente
-      if (error?.message?.includes('notification') || error?.message?.includes('permission')) {
-        console.error('[ForegroundSync] ⚠️ Error relacionado con permisos de notificación');
-        console.error('[ForegroundSync] ℹ️ Asegúrate de habilitar notificaciones en Configuración del sistema');
+      if (
+        error?.message?.includes('notification') ||
+        error?.message?.includes('permission')
+      ) {
+        console.error(
+          '[ForegroundSync] ⚠️ Error relacionado con permisos de notificación',
+        );
+        console.error(
+          '[ForegroundSync] ℹ️ Asegúrate de habilitar notificaciones en Configuración del sistema',
+        );
       }
-      
+
       // NO lanzar error - permitir que la app continúe funcionando
-      console.warn('[ForegroundSync] ⚠️ La sincronización en background NO estará disponible');
-      console.warn('[ForegroundSync] ℹ️ La app funcionará normalmente, solo sincronizará con pantalla encendida');
+      console.warn(
+        '[ForegroundSync] ⚠️ La sincronización en background NO estará disponible',
+      );
+      console.warn(
+        '[ForegroundSync] ℹ️ La app funcionará normalmente, solo sincronizará con pantalla encendida',
+      );
       this.isRunning = false;
     }
   }
@@ -135,7 +169,7 @@ class ForegroundSyncService {
    */
   async stop(): Promise<void> {
     console.log('[ForegroundSync] 🔵 stop() llamado');
-    
+
     if (!this.isRunning) {
       console.log('[ForegroundSync] ℹ️ No está en ejecución, nada que detener');
       return;
@@ -166,30 +200,41 @@ class ForegroundSyncService {
   private syncTask = async (taskData: any) => {
     // ROBUSTO: Manejar caso donde taskData.parameters puede ser undefined
     // Esto puede pasar dependiendo de cómo react-native-background-actions pasa los datos
-    const intervalMs = taskData?.parameters?.intervalMs || (this.config.intervalMinutes * 60 * 1000);
+    const intervalMs =
+      taskData?.parameters?.intervalMs ||
+      this.config.intervalMinutes * 60 * 1000;
     const intervalSeconds = intervalMs / 1000;
     const intervalMinutes = intervalMs / 60000;
 
     console.log('═══════════════════════════════════════════════════════');
     console.log('[ForegroundSync] 🚀 TAREA DE SINCRONIZACIÓN INICIADA');
     console.log(`[ForegroundSync] taskData:`, taskData);
-    console.log(`[ForegroundSync] Intervalo: ${intervalSeconds}s (${intervalMinutes} minutos)`);
+    console.log(
+      `[ForegroundSync] Intervalo: ${intervalSeconds}s (${intervalMinutes} minutos)`,
+    );
     console.log(`[ForegroundSync] Timestamp: ${new Date().toISOString()}`);
     console.log('═══════════════════════════════════════════════════════');
 
     // Loop infinito mientras el servicio esté activo
     let syncCount = 0;
-    
+
     console.log('[ForegroundSync] 🔄 Entrando al loop principal...');
-    console.log('[ForegroundSync] 🔍 BackgroundService.isRunning():', BackgroundService.isRunning());
-    
+    console.log(
+      '[ForegroundSync] 🔍 BackgroundService.isRunning():',
+      BackgroundService.isRunning(),
+    );
+
     while (BackgroundService.isRunning()) {
-      console.log(`[ForegroundSync] 🔁 Iteración del loop #${syncCount + 1} - isRunning: ${BackgroundService.isRunning()}`);
+      console.log(
+        `[ForegroundSync] 🔁 Iteración del loop #${
+          syncCount + 1
+        } - isRunning: ${BackgroundService.isRunning()}`,
+      );
       try {
         syncCount++;
         const timestamp = new Date().toISOString();
         const localTime = new Date().toLocaleTimeString('es-MX');
-        
+
         console.log('');
         console.log('┌─────────────────────────────────────────────────────┐');
         console.log(`│ [ForegroundSync] SYNC #${syncCount}`);
@@ -217,11 +262,15 @@ class ForegroundSyncService {
         const durationSeconds = (duration / 1000).toFixed(2);
 
         if (result.success) {
-          console.log('┌─────────────────────────────────────────────────────┐');
+          console.log(
+            '┌─────────────────────────────────────────────────────┐',
+          );
           console.log('│ ✅ SINCRONIZACIÓN EXITOSA');
           console.log(`│ Duración: ${durationSeconds}s`);
-          console.log('└─────────────────────────────────────────────────────┘');
-          
+          console.log(
+            '└─────────────────────────────────────────────────────┘',
+          );
+
           // Actualizar notificación con éxito
           await BackgroundService.updateNotification({
             taskDesc: `Última sync: ${new Date().toLocaleTimeString('es-MX')}`,
@@ -232,12 +281,16 @@ class ForegroundSyncService {
             },
           });
         } else {
-          console.log('┌─────────────────────────────────────────────────────┐');
+          console.log(
+            '┌─────────────────────────────────────────────────────┐',
+          );
           console.log('│ ❌ ERROR EN SINCRONIZACIÓN');
           console.log(`│ Error: ${result.error}`);
           console.log(`│ Duración: ${durationSeconds}s`);
-          console.log('└─────────────────────────────────────────────────────┘');
-          
+          console.log(
+            '└─────────────────────────────────────────────────────┘',
+          );
+
           // Actualizar notificación con error
           await BackgroundService.updateNotification({
             taskDesc: `Error en sync: ${result.error || 'Desconocido'}`,
@@ -248,7 +301,6 @@ class ForegroundSyncService {
             },
           });
         }
-
       } catch (error: any) {
         console.log('┌─────────────────────────────────────────────────────┐');
         console.log('│ ❌ ERROR CRÍTICO EN TAREA');
@@ -258,21 +310,34 @@ class ForegroundSyncService {
       }
 
       // Esperar el intervalo antes de la próxima sincronización
-      const nextSyncTime = new Date(Date.now() + intervalMs).toLocaleTimeString('es-MX');
+      const nextSyncTime = new Date(Date.now() + intervalMs).toLocaleTimeString(
+        'es-MX',
+      );
       console.log('');
-      console.log(`[ForegroundSync] ⏳ Esperando ${intervalSeconds}s (${intervalMinutes} min) para próxima sync...`);
+      console.log(
+        `[ForegroundSync] ⏳ Esperando ${intervalSeconds}s (${intervalMinutes} min) para próxima sync...`,
+      );
       console.log(`[ForegroundSync] Próxima sincronización: ${nextSyncTime}`);
       console.log('═══════════════════════════════════════════════════════');
       console.log('');
-      
+
       console.log(`[ForegroundSync] 💤 Iniciando sleep de ${intervalMs}ms...`);
       await this.sleep(intervalMs);
-      console.log(`[ForegroundSync] ⏰ Sleep completado, verificando si seguir loopeando...`);
-      console.log(`[ForegroundSync] 🔍 BackgroundService.isRunning(): ${BackgroundService.isRunning()}`);
+      console.log(
+        `[ForegroundSync] ⏰ Sleep completado, verificando si seguir loopeando...`,
+      );
+      console.log(
+        `[ForegroundSync] 🔍 BackgroundService.isRunning(): ${BackgroundService.isRunning()}`,
+      );
     }
-    
-    console.log('[ForegroundSync] 🛑 Loop de sincronización terminado (servicio detenido)');
-    console.log('[ForegroundSync] 🔍 Estado final - isRunning:', BackgroundService.isRunning());
+
+    console.log(
+      '[ForegroundSync] 🛑 Loop de sincronización terminado (servicio detenido)',
+    );
+    console.log(
+      '[ForegroundSync] 🔍 Estado final - isRunning:',
+      BackgroundService.isRunning(),
+    );
   };
 
   /**
@@ -290,7 +355,11 @@ class ForegroundSyncService {
 
       const sucursal = user.sucursal_origen || user.sucursal || 1;
       const idUsuario = user.id || user.idUsuario || 1;
-      console.log(`[ForegroundSync] Usuario: ${user.claveEmpleado || idUsuario}, Sucursal: ${sucursal}`);
+      console.log(
+        `[ForegroundSync] Usuario: ${
+          user.claveEmpleado || idUsuario
+        }, Sucursal: ${sucursal}`,
+      );
 
       console.log('[ForegroundSync] 📤 PASO 1: Enviando ventas pendientes...');
       // PRIMERO: Enviar ventas pendientes al servidor
@@ -305,7 +374,10 @@ class ForegroundSyncService {
       } else if (ventasResult.success) {
         console.log('[ForegroundSync] ℹ️ No hay ventas pendientes');
       } else {
-        console.warn('[ForegroundSync] ⚠️ Error enviando ventas:', ventasResult.error);
+        console.warn(
+          '[ForegroundSync] ⚠️ Error enviando ventas:',
+          ventasResult.error,
+        );
       }
 
       console.log('[ForegroundSync] 📤 PASO 2: Enviando cobranza pendiente...');
@@ -321,26 +393,35 @@ class ForegroundSyncService {
       } else if (cobranzaResult.success) {
         console.log('[ForegroundSync] ℹ️ No hay cobranza pendiente');
       } else {
-        console.warn('[ForegroundSync] ⚠️ Error enviando cobranza:', cobranzaResult.error);
+        console.warn(
+          '[ForegroundSync] ⚠️ Error enviando cobranza:',
+          cobranzaResult.error,
+        );
       }
 
       console.log('[ForegroundSync] 🔄 PASO 3: Sincronización incremental...');
       // TERCERO: Sincronización incremental de datos
       const syncResult = await FullSyncService.syncIncremental(
         sucursal,
-        (progress) => {
+        progress => {
           console.log(
             `[ForegroundSync] 📊 ${progress.entity}: ${progress.status}`,
           );
         },
+        'foreground_service',
       );
 
       if (!syncResult.success) {
-        console.error('[ForegroundSync] ❌ Sincronización incremental falló:', syncResult.error);
+        console.error(
+          '[ForegroundSync] ❌ Sincronización incremental falló:',
+          syncResult.error,
+        );
         return { success: false, error: syncResult.error };
       }
 
-      console.log('[ForegroundSync] ✅ Todos los pasos completados exitosamente');
+      console.log(
+        '[ForegroundSync] ✅ Todos los pasos completados exitosamente',
+      );
       return { success: true };
     } catch (error: any) {
       console.error('[ForegroundSync] ❌ Error en performSync:', error);

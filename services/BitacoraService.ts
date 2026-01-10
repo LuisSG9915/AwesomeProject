@@ -180,6 +180,7 @@ export const BitacoraSesionSchema = {
 
     sucursal: 'int',
     tipoSync: 'string',
+    origenSync: 'string?',
 
     totalTablas: 'int',
     tablasExitosas: 'int',
@@ -406,6 +407,58 @@ class BitacoraService {
   }
 
   /**
+   * Obtiene información del dispositivo con timeout
+   */
+  private async getDeviceInfoWithTimeout(
+    timeoutMs: number = 5000,
+  ): Promise<DeviceInfo> {
+    return Promise.race([
+      this.getDeviceInfo(),
+      new Promise<DeviceInfo>(resolve => {
+        setTimeout(() => {
+          console.log(
+            '[BitacoraService] ⏰ Timeout obteniendo info de dispositivo',
+          );
+          resolve({
+            ipDispositivo: null,
+            nombreDispositivo: 'Timeout Device',
+            sistemaOperativo: 'unknown',
+            versionApp: 'unknown',
+            marca: 'Unknown',
+            modelo: 'Unknown',
+          });
+        }, timeoutMs);
+      }),
+    ]);
+  }
+
+  /**
+   * Obtiene información de red con timeout
+   */
+  private async getNetworkInfoWithTimeout(
+    timeoutMs: number = 5000,
+  ): Promise<NetworkInfo> {
+    return Promise.race([
+      this.getNetworkInfo(),
+      new Promise<NetworkInfo>(resolve => {
+        setTimeout(() => {
+          console.log('[BitacoraService] ⏰ Timeout obteniendo info de red');
+          resolve({
+            tipoConexion: 'unknown',
+            tipoConexionDetallado: 'unknown',
+            estadoConexion: null,
+            intensidadSenal: null,
+            velocidadDescargaMbps: null,
+            velocidadCargaMbps: null,
+            latenciaMs: null,
+            esConexionMetered: null,
+          });
+        }, timeoutMs);
+      }),
+    ]);
+  }
+
+  /**
    * Registra el inicio de una sincronización de tabla
    */
   async registrarInicioSync(
@@ -420,13 +473,42 @@ class BitacoraService {
       return this.generateBitacoraId();
     }
 
-    this.invalidateDeviceInfoCache();
-    const deviceInfo = await this.getDeviceInfo();
-    const networkInfo = await this.getNetworkInfo();
     const id = this.generateBitacoraId();
     const idBitacoraMovil = `${id}-${tabla}`;
 
     try {
+      // CRÍTICO: En background no bloqueamos esperando info de red/dispositivo
+      // ya que Android puede suspender esos módulos y colgar la sync.
+      const isBackground = origenSync === 'background' || origenSync === 'auto';
+
+      let deviceInfo: any = this.cachedDeviceInfo || {
+        ipDispositivo: null,
+        nombreDispositivo: 'Background Device',
+        sistemaOperativo: 'android',
+        versionApp: 'unknown',
+      };
+
+      let networkInfo: any = this.cachedNetworkInfo || {
+        tipoConexion: 'unknown',
+        estadoConexion: true,
+      };
+
+      // Solo intentamos refrescar info si no es background crítico
+      if (!isBackground) {
+        try {
+          const info = await Promise.race([
+            Promise.all([this.getDeviceInfo(), this.getNetworkInfo()]),
+            new Promise<any>((_, reject) =>
+              setTimeout(() => reject('timeout'), 2000),
+            ),
+          ]);
+          deviceInfo = info[0];
+          networkInfo = info[1];
+        } catch (e) {
+          // Ignorar errores de info en background
+        }
+      }
+
       const { AppState } = require('react-native');
       const currentAppState = AppState.currentState || 'unknown';
 
@@ -573,6 +655,12 @@ class BitacoraService {
    */
   async registrarInicioSesion(
     tipoSync: 'completa' | 'incremental' | 'manual',
+    origenSync:
+      | 'manual'
+      | 'tasker'
+      | 'foreground_service'
+      | 'background_interval'
+      | 'background_fetch' = 'manual',
   ): Promise<string> {
     if (!this.realm) {
       console.warn('[BitacoraService] Realm no inicializado');
@@ -600,6 +688,7 @@ class BitacoraService {
 
           sucursal: this.currentSucursal,
           tipoSync,
+          origenSync,
 
           totalTablas: 0,
           tablasExitosas: 0,
@@ -614,7 +703,9 @@ class BitacoraService {
         });
       });
 
-      console.log(`[BitacoraService] Sesión iniciada: ${tipoSync} (${id})`);
+      console.log(
+        `[BitacoraService] Sesión iniciada: ${tipoSync} - Origen: ${origenSync} (${id})`,
+      );
     } catch (error) {
       console.error('[BitacoraService] Error iniciando sesión:', error);
     }

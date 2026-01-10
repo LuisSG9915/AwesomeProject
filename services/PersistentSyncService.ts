@@ -1,14 +1,14 @@
 /**
  * PersistentSyncService
- * 
+ *
  * Servicio de sincronización PERSISTENTE que funciona:
  * - Con pantalla apagada
  * - En segundo plano
  * - Incluso después de cerrar la app (Android Foreground Service)
- * 
+ *
  * Usa react-native-background-actions para crear un Foreground Service
  * que Android NO puede matar por ahorro de batería.
- * 
+ *
  * IMPORTANTE: Esto consume batería significativamente. El cliente fue informado.
  */
 
@@ -17,11 +17,7 @@ import FullSyncService from './FullSyncService';
 import AuthService from './AuthService';
 import { SyncProgress } from './sync/SyncTask';
 
-export type PersistentSyncStatus = 
-  | 'stopped'
-  | 'running'
-  | 'syncing'
-  | 'error';
+export type PersistentSyncStatus = 'stopped' | 'running' | 'syncing' | 'error';
 
 export interface PersistentSyncState {
   status: PersistentSyncStatus;
@@ -151,7 +147,7 @@ class PersistentSyncService {
 
     try {
       await BackgroundActions.stop();
-      
+
       this.updateState({
         status: 'stopped',
         isBackgroundTaskRunning: false,
@@ -253,7 +249,7 @@ class PersistentSyncService {
 
       if (ventasResult.success && ventasResult.sent > 0) {
         console.log(`[PersistentSync] Ventas enviadas: ${ventasResult.sent}`);
-        
+
         await BackgroundActions.updateNotification({
           taskTitle: 'Sincronizando...',
           taskDesc: `Enviadas ${ventasResult.sent} ventas`,
@@ -265,13 +261,14 @@ class PersistentSyncService {
         sucursal,
         (progress: SyncProgress) => {
           this.updateState({ currentProgress: progress });
-          
+
           // Actualizar notificación con progreso
           BackgroundActions.updateNotification({
             taskTitle: `Sincronizando ${progress.entity}`,
             taskDesc: `${progress.current}/${progress.total} - ${progress.message}`,
           });
         },
+        'foreground_service',
       );
 
       const now = new Date();
@@ -299,7 +296,10 @@ class PersistentSyncService {
           errorMessage: result.error || 'Error desconocido',
         });
 
-        console.error('[PersistentSync] Error en sincronización:', result.error);
+        console.error(
+          '[PersistentSync] Error en sincronización:',
+          result.error,
+        );
 
         await BackgroundActions.updateNotification({
           taskTitle: 'Error en Sincronización',

@@ -59,7 +59,7 @@ const HeadlessTask = async (event) => {
     // Ejecutar sincronización incremental (más ligera que syncAll)
     const result = await FullSyncService.syncIncremental(sucursal, (progress) => {
       console.log('[HeadlessTask] Progreso:', progress.entity, progress.status);
-    });
+    }, 'background_fetch');
     
     if (result.success) {
       console.log('[HeadlessTask] Sincronización completada exitosamente');

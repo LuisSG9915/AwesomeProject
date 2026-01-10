@@ -28,6 +28,7 @@ import {
 import { Icon } from 'react-native-elements';
 import BackgroundSyncService, {
   BackgroundSyncState,
+  SyncSource,
 } from '../services/BackgroundSyncService';
 import TrazabilidadService from '../services/TrazabilidadService';
 import { COLORS, SPACING, BORDER_RADIUS, SHADOWS } from '../theme/theme';
@@ -168,6 +169,40 @@ export default function SyncStatusPanel({
     }
   };
 
+  const getSyncSourceLabel = (source: SyncSource): string => {
+    switch (source) {
+      case 'tasker':
+        return 'Tasker';
+      case 'foreground_service':
+        return 'Foreground';
+      case 'background_interval':
+        return 'Intervalo';
+      case 'background_fetch':
+        return 'Background';
+      case 'manual':
+        return 'Manual';
+      default:
+        return 'Desconocido';
+    }
+  };
+
+  const getSyncSourceColor = (source: SyncSource): string => {
+    switch (source) {
+      case 'tasker':
+        return '#9C27B0'; // Morado
+      case 'foreground_service':
+        return '#2196F3'; // Azul
+      case 'background_interval':
+        return '#FF9800'; // Naranja
+      case 'background_fetch':
+        return '#607D8B'; // Gris azulado
+      case 'manual':
+        return '#4CAF50'; // Verde
+      default:
+        return COLORS.muted;
+    }
+  };
+
   const formatTime = (date: Date | null) => {
     if (!date) return 'N/A';
     return date.toLocaleTimeString('es-MX', {
@@ -259,10 +294,45 @@ export default function SyncStatusPanel({
         {/* Estado actual */}
         <View style={styles.row}>
           <Text style={styles.label}>Estado:</Text>
-          <Text style={[styles.value, { color: getStatusColor() }]}>
-            {getStatusText()}
-          </Text>
+          <View style={styles.statusContainer}>
+            <Text style={[styles.value, { color: getStatusColor() }]}>
+              {getStatusText()}
+            </Text>
+            {state.currentSyncSource && (
+              <View
+                style={[
+                  styles.syncSourceBadge,
+                  {
+                    backgroundColor: getSyncSourceColor(
+                      state.currentSyncSource,
+                    ),
+                  },
+                ]}
+              >
+                <Text style={styles.syncSourceBadgeText}>
+                  {getSyncSourceLabel(state.currentSyncSource)}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
+
+        {/* Último origen de sincronización */}
+        {state.lastSyncSource && (
+          <View style={styles.row}>
+            <Text style={styles.label}>Última vía:</Text>
+            <View
+              style={[
+                styles.syncSourceBadge,
+                { backgroundColor: getSyncSourceColor(state.lastSyncSource) },
+              ]}
+            >
+              <Text style={styles.syncSourceBadgeText}>
+                {getSyncSourceLabel(state.lastSyncSource)}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Progreso actual */}
         {state.status === 'syncing' && state.currentProgress && (
@@ -443,6 +513,21 @@ const styles = StyleSheet.create({
   },
   compactText: {
     fontSize: 12,
+    fontWeight: '600',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  syncSourceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  syncSourceBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontWeight: '600',
   },
 });

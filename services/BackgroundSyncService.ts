@@ -27,6 +27,14 @@ export type SyncStatus =
   | 'success' // Última sincronización exitosa
   | 'error'; // Error en última sincronización
 
+export type SyncSource =
+  | 'manual'
+  | 'tasker'
+  | 'foreground_service'
+  | 'background_interval'
+  | 'background_fetch'
+  | null;
+
 export interface BackgroundSyncState {
   status: SyncStatus;
   lastSyncTime: Date | null;
@@ -34,6 +42,8 @@ export interface BackgroundSyncState {
   currentProgress: SyncProgress | null;
   errorMessage: string | null;
   syncCount: number;
+  currentSyncSource: SyncSource;
+  lastSyncSource: SyncSource;
 }
 
 type StateListener = (state: BackgroundSyncState) => void;
@@ -58,6 +68,8 @@ class BackgroundSyncService {
     currentProgress: null,
     errorMessage: null,
     syncCount: 0,
+    currentSyncSource: null,
+    lastSyncSource: null,
   };
 
   // Listeners para notificar cambios de estado
@@ -101,16 +113,16 @@ class BackgroundSyncService {
     setTimeout(async () => {
       try {
         console.log('[BackgroundSync] 🔧 Configurando Foreground Service...');
-        // ForegroundSyncService.configure({
-        //   intervalMinutes: this.FOREGROUND_INTERVAL_MINUTES,
-        // });
+        ForegroundSyncService.configure({
+          intervalMinutes: this.FOREGROUND_INTERVAL_MINUTES,
+        });
 
         console.log('[BackgroundSync] 🚀 Iniciando Foreground Service...');
         console.log(
           '[BackgroundSync] ℹ️ Nota: Requiere permisos de notificaciones y Android 14+ con foregroundServiceType',
         );
 
-        // await ForegroundSyncService.start();
+        await ForegroundSyncService.start();
         console.log(
           '[BackgroundSync] ✅ Foreground Service iniciado exitosamente',
         );
@@ -329,13 +341,13 @@ class BackgroundSyncService {
       console.log(
         '[BackgroundSync] 🔍 Verificando estado de Foreground Service...',
       );
-      // if (ForegroundSyncService.isActive()) {
-      //   console.log('[BackgroundSync] 🛑 Deteniendo Foreground Service...');
-      //   await ForegroundSyncService.stop();
-      //   console.log('[BackgroundSync] ✅ Foreground Service detenido');
-      // } else {
-      //   console.log('[BackgroundSync] ℹ️ Foreground Service no estaba activo');
-      // }
+      if (ForegroundSyncService.isActive()) {
+        console.log('[BackgroundSync] 🛑 Deteniendo Foreground Service...');
+        await ForegroundSyncService.stop();
+        console.log('[BackgroundSync] ✅ Foreground Service detenido');
+      } else {
+        console.log('[BackgroundSync] ℹ️ Foreground Service no estaba activo');
+      }
     } catch (error: any) {
       console.error(
         '[BackgroundSync] ❌ Error deteniendo Foreground Service:',
@@ -419,6 +431,13 @@ class BackgroundSyncService {
   private async performSync(
     source: 'interval' | 'backgroundFetch' | 'manual' = 'manual',
   ): Promise<void> {
+    // Mapear source interno a SyncSource para UI
+    const syncSourceMap: Record<string, SyncSource> = {
+      interval: 'background_interval',
+      backgroundFetch: 'background_fetch',
+      manual: 'manual',
+    };
+    const currentSource = syncSourceMap[source] || 'manual';
     const timestamp = new Date().toISOString();
     const now = Date.now();
 
@@ -457,6 +476,7 @@ class BackgroundSyncService {
       status: 'syncing',
       currentProgress: null,
       errorMessage: null,
+      currentSyncSource: currentSource,
     });
 
     try {
@@ -512,6 +532,7 @@ class BackgroundSyncService {
             currentProgress: progress,
           });
         },
+        'background_interval',
       );
 
       // ARRASTRE DE BITÁCORAS: Enviar bitácoras de los últimos 3 días al servidor
@@ -577,6 +598,8 @@ class BackgroundSyncService {
           currentProgress: null,
           errorMessage: null,
           syncCount: this.state.syncCount + 1,
+          currentSyncSource: null,
+          lastSyncSource: currentSource,
         });
         const duration =
           now.getTime() - Date.now() + (now.getTime() - Date.now());
@@ -590,6 +613,8 @@ class BackgroundSyncService {
           nextSyncTime: nextSync,
           currentProgress: null,
           errorMessage: result.error || 'Error desconocido',
+          currentSyncSource: null,
+          lastSyncSource: currentSource,
         });
         console.log(
           `[BackgroundSync] ⚠️ [${source}] Sincronización completada con errores:`,
@@ -610,8 +635,46 @@ class BackgroundSyncService {
         nextSyncTime: nextSync,
         currentProgress: null,
         errorMessage: errorMsg,
+        currentSyncSource: null,
+        lastSyncSource: currentSource,
       });
     }
+  }
+
+  /**
+   * Notifica el inicio de una sincronización externa (ej: Tasker, ForegroundService)
+   * Esto actualiza el estado para que la UI muestre qué tipo de sincronización está activa
+   */
+  notifySyncStart(source: SyncSource): void {
+    console.log(
+      `[BackgroundSync] 📢 Sincronización externa iniciada: ${source}`,
+    );
+    this.updateState({
+      status: 'syncing',
+      currentSyncSource: source,
+      currentProgress: null,
+      errorMessage: null,
+    });
+  }
+
+  /**
+   * Notifica el fin de una sincronización externa
+   */
+  notifySyncEnd(source: SyncSource, success: boolean, error?: string): void {
+    console.log(
+      `[BackgroundSync] 📢 Sincronización externa finalizada: ${source} - ${
+        success ? 'éxito' : 'error'
+      }`,
+    );
+    const now = new Date();
+    this.updateState({
+      status: success ? 'success' : 'error',
+      lastSyncTime: now,
+      currentSyncSource: null,
+      lastSyncSource: source,
+      errorMessage: error || null,
+      syncCount: success ? this.state.syncCount + 1 : this.state.syncCount,
+    });
   }
 
   /**
