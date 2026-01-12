@@ -4,6 +4,8 @@ import BackgroundSyncService from './BackgroundSyncService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { batteryOptimizationService } from './BatteryOptimization';
 
+declare const module: any;
+
 // Clave para mutex persistente en AsyncStorage
 const TASKER_MUTEX_KEY = '@tasker_sync_mutex';
 const TASKER_LAST_SYNC_KEY = '@tasker_last_sync_time';
@@ -67,19 +69,64 @@ async function checkAndCleanMutex(): Promise<boolean> {
 /**
  * Establece el mutex persistente
  */
-async function setMutex(active: boolean): Promise<void> {
+async function setMutex(active: boolean, ownerId?: string): Promise<void> {
   try {
     if (active) {
+      if (ownerId) {
+        const mutexData = await AsyncStorage.getItem(TASKER_MUTEX_KEY);
+        if (mutexData) {
+          let parsed: any;
+          try {
+            parsed = JSON.parse(mutexData);
+          } catch (_e) {
+            parsed = null;
+          }
+
+          const currentOwnerId = parsed?.ownerId;
+          const currentActive = parsed?.active;
+          if (currentActive && currentOwnerId && currentOwnerId !== ownerId) {
+            return;
+          }
+        }
+      }
+
       await AsyncStorage.setItem(
         TASKER_MUTEX_KEY,
         JSON.stringify({
           timestamp: Date.now(),
           active: true,
+          ownerId,
         }),
       );
-    } else {
-      await AsyncStorage.removeItem(TASKER_MUTEX_KEY);
+      return;
     }
+
+    if (!ownerId) {
+      await AsyncStorage.removeItem(TASKER_MUTEX_KEY);
+      return;
+    }
+
+    const mutexData = await AsyncStorage.getItem(TASKER_MUTEX_KEY);
+    if (!mutexData) {
+      return;
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(mutexData);
+    } catch (_e) {
+      await AsyncStorage.removeItem(TASKER_MUTEX_KEY);
+      return;
+    }
+
+    const currentOwnerId = parsed?.ownerId;
+    const currentActive = parsed?.active;
+
+    if (currentActive && currentOwnerId && currentOwnerId !== ownerId) {
+      return;
+    }
+
+    await AsyncStorage.removeItem(TASKER_MUTEX_KEY);
   } catch (error) {
     console.error('[TaskerSync] Error estableciendo mutex:', error);
   }
@@ -111,6 +158,7 @@ async function getLastSyncTime(): Promise<string | null> {
 module.exports = async (taskData: any) => {
   const startTime = Date.now();
   const timestamp = new Date().toISOString();
+  const runId = `tasker_${startTime}_${Math.random().toString(16).slice(2)}`;
 
   console.log('═══════════════════════════════════════════════════════');
   console.log('[TaskerSync] 🚀 INICIANDO SERVICIO DE SINCRONIZACIÓN');
@@ -159,18 +207,26 @@ module.exports = async (taskData: any) => {
   }
 
   // Activar mutex persistente (el mutex en memoria no es confiable en background)
-  await setMutex(true);
+  await setMutex(true, runId);
   console.log('[TaskerSync] 🔒 Mutex persistente activado');
 
   // Notificar a BackgroundSyncService para actualizar UI
   BackgroundSyncService.notifySyncStart('tasker');
 
   // HEARTBEAT: Log cada 5 segundos para verificar si el JS se suspende
+  const mutexTouchIntervalMs = 20000;
+  let lastMutexTouch = Date.now();
   const heartbeatId = setInterval(() => {
-    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    const now = Date.now();
+    const elapsed = Math.round((now - startTime) / 1000);
     console.log(
       `[TaskerSync] 💓 Heartbeat - Sync en curso (${elapsed}s elapsed)`,
     );
+
+    if (now - lastMutexTouch >= mutexTouchIntervalMs) {
+      lastMutexTouch = now;
+      void setMutex(true, runId);
+    }
   }, 5000);
 
   try {
@@ -306,7 +362,7 @@ module.exports = async (taskData: any) => {
     }
 
     // Liberar mutex persistente
-    await setMutex(false);
+    await setMutex(false, runId);
     console.log('[TaskerSync] 🔓 Mutex persistente liberado');
   }
 };

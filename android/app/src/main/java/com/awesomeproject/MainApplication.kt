@@ -7,6 +7,8 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.ReactPackage
+ import com.facebook.react.modules.network.OkHttpClientProvider
+ import java.util.concurrent.TimeUnit
 
 class MainApplication : Application(), ReactApplication {
 
@@ -35,6 +37,15 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+ 
+     OkHttpClientProvider.setOkHttpClientFactory {
+       OkHttpClientProvider.createClientBuilder(applicationContext)
+         .connectTimeout(15, TimeUnit.SECONDS)
+         .readTimeout(15, TimeUnit.SECONDS)
+         .writeTimeout(15, TimeUnit.SECONDS)
+         .callTimeout(15, TimeUnit.SECONDS)
+         .build()
+     }
     loadReactNative(this)
   }
 }

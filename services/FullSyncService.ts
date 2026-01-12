@@ -17,35 +17,160 @@ async function fetchWithTimeout(
   options: RequestInit = {},
   timeoutMs: number = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    console.log(
-      `[FetchTimeout] ⏰ Timeout de ${timeoutMs}ms alcanzado para: ${url.substring(
-        0,
-        80,
-      )}...`,
-    );
-    controller.abort();
-  }, timeoutMs);
+  const effectiveTimeoutMs = timeoutMs > 0 ? timeoutMs : FETCH_TIMEOUT_MS;
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error(
-        `TIMEOUT: La solicitud tardó más de ${
-          timeoutMs / 1000
-        }s - red suspendida por Android`,
-      );
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const method = (options.method || 'GET').toUpperCase();
+    const signal = (options as any).signal as AbortSignal | undefined;
+
+    const onSignalAbort = () => {
+      try {
+        xhr.abort();
+      } catch (_e) {
+      }
+    };
+
+    const cleanup = () => {
+      if (signal) {
+        try {
+          signal.removeEventListener('abort', onSignalAbort);
+        } catch (_e) {
+        }
+      }
+    };
+
+    try {
+      xhr.open(method, url, true);
+    } catch (error) {
+      cleanup();
+      reject(error);
+      return;
     }
-    throw error;
-  }
+
+    xhr.timeout = effectiveTimeoutMs;
+
+    const requestHeaders = options.headers;
+    if (requestHeaders) {
+      try {
+        if (Array.isArray(requestHeaders)) {
+          for (const [key, value] of requestHeaders) {
+            if (typeof value !== 'undefined') {
+              xhr.setRequestHeader(String(key), String(value));
+            }
+          }
+        } else if (typeof (requestHeaders as any).forEach === 'function') {
+          (requestHeaders as any).forEach((value: any, key: any) => {
+            if (typeof value !== 'undefined') {
+              xhr.setRequestHeader(String(key), String(value));
+            }
+          });
+        } else {
+          for (const [key, value] of Object.entries(requestHeaders as any)) {
+            if (typeof value !== 'undefined') {
+              xhr.setRequestHeader(String(key), String(value));
+            }
+          }
+        }
+      } catch (_e) {
+      }
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        cleanup();
+        const abortError: any = new Error('Aborted');
+        abortError.name = 'AbortError';
+        reject(abortError);
+        return;
+      }
+
+      try {
+        signal.addEventListener('abort', onSignalAbort);
+      } catch (_e) {
+      }
+    }
+
+    const buildResponse = (): Response => {
+      const rawHeaders = xhr.getAllResponseHeaders
+        ? xhr.getAllResponseHeaders()
+        : '';
+      const headers: Record<string, string> = {};
+
+      if (rawHeaders) {
+        const lines = rawHeaders.trim().split(/[\r\n]+/);
+        for (const line of lines) {
+          const index = line.indexOf(':');
+          if (index <= 0) continue;
+          const key = line.slice(0, index).trim().toLowerCase();
+          const value = line.slice(index + 1).trim();
+          if (!key) continue;
+          headers[key] = value;
+        }
+      }
+
+      return new Response(xhr.responseText ?? '', {
+        status: xhr.status,
+        statusText: xhr.statusText,
+        headers,
+      });
+    };
+
+    xhr.onload = () => {
+      cleanup();
+
+      if (xhr.status === 0) {
+        reject(new Error(`NETWORK_ERROR: Solicitud fallida para ${url}`));
+        return;
+      }
+
+      try {
+        resolve(buildResponse());
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    xhr.onerror = () => {
+      cleanup();
+      reject(new Error(`NETWORK_ERROR: Solicitud fallida para ${url}`));
+    };
+
+    xhr.ontimeout = () => {
+      cleanup();
+      console.log(
+        `[FetchTimeout] ⏰ Timeout de ${effectiveTimeoutMs}ms alcanzado para: ${url.substring(
+          0,
+          80,
+        )}...`,
+      );
+      reject(
+        new Error(
+          `TIMEOUT: La solicitud tardó más de ${
+            effectiveTimeoutMs / 1000
+          }s - red suspendida por Android`,
+        ),
+      );
+    };
+
+    xhr.onabort = () => {
+      cleanup();
+      const abortError: any = new Error('Aborted');
+      abortError.name = 'AbortError';
+      reject(abortError);
+    };
+
+    try {
+      const body =
+        method === 'GET' || method === 'HEAD'
+          ? null
+          : (options as any).body ?? null;
+      xhr.send(body as any);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
 }
 
 class FullSyncService {
