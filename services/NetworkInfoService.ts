@@ -36,12 +36,20 @@ export interface NetworkInfo {
 class NetworkInfoService {
   private cachedNetworkInfo: NetworkInfo | null = null;
   private lastCacheTime: number = 0;
-  private CACHE_DURATION_MS = 5000; // Cache de 5 segundos
+  private CACHE_DURATION_MS = 60000; // Cache de 60 segundos (aumentado para cubrir toda la sync)
 
   /**
    * Obtiene información completa de la red actual
    */
   async getNetworkInfo(): Promise<NetworkInfo> {
+    const now = Date.now();
+    if (
+      this.cachedNetworkInfo &&
+      now - this.lastCacheTime < this.CACHE_DURATION_MS
+    ) {
+      return this.cachedNetworkInfo;
+    }
+
     if (!netInfoAvailable || !NetInfo) {
       const networkInfo = this.getDefaultNetworkInfo();
       return networkInfo;
@@ -71,6 +79,9 @@ class NetworkInfoService {
         latencia: networkInfo.latenciaMs,
         metered: networkInfo.esConexionMetered,
       });
+
+      this.cachedNetworkInfo = networkInfo;
+      this.lastCacheTime = Date.now();
 
       return networkInfo;
     } catch (error) {

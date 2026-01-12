@@ -312,9 +312,8 @@ class BitacoraService {
    * Obtiene información de red (con cache)
    */
   private async getNetworkInfo(): Promise<NetworkInfo> {
-    if (this.cachedNetworkInfo) {
-      return this.cachedNetworkInfo;
-    }
+    // Delegamos el caching al NetworkInfoService (que tiene duración de 60s)
+    // Siempre solicitamos info al servicio para asegurar que no usamos datos estancados de BitacoraService
 
     try {
       this.cachedNetworkInfo = await networkInfoService.getNetworkInfo();
@@ -473,16 +472,14 @@ class BitacoraService {
       const onSignalAbort = () => {
         try {
           xhr.abort();
-        } catch (_e) {
-        }
+        } catch (_e) {}
       };
 
       const cleanup = () => {
         if (signal) {
           try {
             signal.removeEventListener('abort', onSignalAbort);
-          } catch (_e) {
-          }
+          } catch (_e) {}
         }
       };
 
@@ -518,8 +515,7 @@ class BitacoraService {
               }
             }
           }
-        } catch (_e) {
-        }
+        } catch (_e) {}
       }
 
       if (signal) {
@@ -533,8 +529,7 @@ class BitacoraService {
 
         try {
           signal.addEventListener('abort', onSignalAbort);
-        } catch (_e) {
-        }
+        } catch (_e) {}
       }
 
       const buildResponse = (): Response => {
@@ -643,22 +638,41 @@ class BitacoraService {
 
       let networkInfo: any = this.cachedNetworkInfo || {
         tipoConexion: 'unknown',
+        tipoConexionDetallado: 'unknown',
         estadoConexion: true,
+        intensidadSenal: null,
+        velocidadDescargaMbps: null,
+        velocidadCargaMbps: null,
+        latenciaMs: null,
+        esConexionMetered: null,
       };
 
-      // Solo intentamos refrescar info si no es background crítico
-      if (!isBackground) {
-        try {
-          const info = await Promise.race([
-            Promise.all([this.getDeviceInfo(), this.getNetworkInfo()]),
-            new Promise<any>((_, reject) =>
-              setTimeout(() => reject('timeout'), 2000),
-            ),
-          ]);
-          deviceInfo = info[0];
-          networkInfo = info[1];
-        } catch (e) {
-          // Ignorar errores de info en background
+      // Intentamos refrescar info incluso en background, pero con timeout muy corto
+      // Gracias al caching y pre-warming, esto debería ser instantáneo casi siempre
+      const timeoutMs = isBackground ? 800 : 2000;
+
+      try {
+        const info = await Promise.race([
+          Promise.all([
+            // En background aceptamos cache viejo para device info
+            isBackground
+              ? this.cachedDeviceInfo || this.getDeviceInfo()
+              : this.getDeviceInfo(),
+            this.getNetworkInfo(),
+          ]),
+          new Promise<any>((_, reject) =>
+            setTimeout(() => reject('timeout'), timeoutMs),
+          ),
+        ]);
+        deviceInfo = info[0];
+        networkInfo = info[1];
+      } catch (e) {
+        // Ignorar errores de info, usar fallbacks
+        if (!isBackground) {
+          console.warn(
+            '[BitacoraService] Timeout obteniendo info contexto:',
+            e,
+          );
         }
       }
 

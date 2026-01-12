@@ -1,6 +1,7 @@
 import FullSyncService from './FullSyncService';
 import AuthService from './AuthService';
 import BackgroundSyncService from './BackgroundSyncService';
+import { networkInfoService } from './NetworkInfoService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { batteryOptimizationService } from './BatteryOptimization';
 
@@ -178,6 +179,12 @@ module.exports = async (taskData: any) => {
 
   // Verificar exención de optimización de batería (CRÍTICO para background)
   try {
+    // PRE-WARM: Iniciar detección de red en paralelo para tener datos listos cuando se necesiten
+    // No usamos await aquí para no bloquear, pero el servicio cacheará el resultado
+    void networkInfoService
+      .getNetworkInfo()
+      .catch(e => console.log('[TaskerSync] ⚠️ Error en pre-fetch de red:', e));
+
     const isExempt =
       await batteryOptimizationService.isIgnoringBatteryOptimizations();
     if (!isExempt) {

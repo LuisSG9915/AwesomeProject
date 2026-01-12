@@ -20,6 +20,7 @@ import AuthService from './AuthService';
 import BackgroundFetch from 'react-native-background-fetch';
 import { AppState, AppStateStatus } from 'react-native';
 import ForegroundSyncService from './ForegroundSyncService';
+import { networkInfoService } from './NetworkInfoService';
 
 export type SyncStatus =
   | 'idle' // No sincronizando
@@ -480,6 +481,9 @@ class BackgroundSyncService {
     });
 
     try {
+      // PRE-WARM: Iniciar detección de red para tener datos listos
+      void networkInfoService.getNetworkInfo().catch(() => {});
+
       // Obtener usuario y sucursal
       const user = await AuthService.restoreSession();
       if (!user) {
@@ -525,6 +529,15 @@ class BackgroundSyncService {
       // DESPUÉS: Ejecutar sincronización INCREMENTAL usando arquitectura escalable
       // FullSyncService.syncIncremental() usa fechaInicial basada en syncedAr
       // por tabla y los nuevos endpoints específicos para background.
+
+      // PRE-WARM REFRESH: Refrescar info de red antes de incremental (por si arrastre tardó)
+      // Usamos await para asegurar que el cache está listo antes de iniciar
+      try {
+        await networkInfoService.getNetworkInfo();
+      } catch (e) {
+        console.warn('[BackgroundSync] Falló pre-warm de red:', e);
+      }
+
       const result = await FullSyncService.syncIncremental(
         sucursal,
         (progress: SyncProgress) => {
