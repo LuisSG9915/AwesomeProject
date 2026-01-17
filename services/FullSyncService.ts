@@ -9,8 +9,8 @@ export type SyncProgressCallback = (progress: SyncProgress) => void;
 
 // CRÍTICO: Fetch con timeout usando AbortController
 // En background, Android puede suspender las conexiones de red indefinidamente
-// Este wrapper garantiza que el fetch no se quede colgado más de 15 segundos
-const FETCH_TIMEOUT_MS = 15000; // 15 segundos
+// Este wrapper garantiza que el fetch no se quede colgado más de 7.5 segundos
+const FETCH_TIMEOUT_MS = 7500; // 7.5 segundos
 
 async function fetchWithTimeout(
   url: string,
@@ -27,16 +27,14 @@ async function fetchWithTimeout(
     const onSignalAbort = () => {
       try {
         xhr.abort();
-      } catch (_e) {
-      }
+      } catch (_e) {}
     };
 
     const cleanup = () => {
       if (signal) {
         try {
           signal.removeEventListener('abort', onSignalAbort);
-        } catch (_e) {
-        }
+        } catch (_e) {}
       }
     };
 
@@ -72,8 +70,7 @@ async function fetchWithTimeout(
             }
           }
         }
-      } catch (_e) {
-      }
+      } catch (_e) {}
     }
 
     if (signal) {
@@ -87,8 +84,7 @@ async function fetchWithTimeout(
 
       try {
         signal.addEventListener('abort', onSignalAbort);
-      } catch (_e) {
-      }
+      } catch (_e) {}
     }
 
     const buildResponse = (): Response => {

@@ -1,4 +1,11 @@
-import { Platform, PermissionsAndroid, Alert } from 'react-native';
+import {
+  Platform,
+  PermissionsAndroid,
+  Alert,
+  DeviceEventEmitter,
+  AppState,
+  AppStateStatus,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   BluetoothManager,
@@ -17,10 +24,224 @@ export interface PrinterStatus {
 }
 
 const STORAGE_KEY = '@awesomeapp/selected_printer';
+const LOGS_STORAGE_KEY = '@awesomeapp/bluetooth_logs';
+const MAX_LOG_ENTRIES = 500;
+
+interface BluetoothLogEntry {
+  timestamp: string;
+  action: string;
+  details: string;
+  success: boolean;
+}
 
 class BluetoothPrinterService {
   private currentPrinter: PrinterDevice | null = null;
   private isConnected: boolean = false;
+  private logs: BluetoothLogEntry[] = [];
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectionCheckInterval: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    this.loadLogs();
+    this.setupBluetoothListeners();
+    this.setupAppStateListener();
+  }
+
+  /**
+   * Configura listeners para eventos de Bluetooth
+   */
+  private setupBluetoothListeners(): void {
+    try {
+      // Listener para cambios de estado de Bluetooth
+      DeviceEventEmitter.addListener('BTPrinterDisconnected', async () => {
+        console.log('[Bluetooth] 🔴 Evento de desconexión detectado');
+        await this.addLog(
+          'BLUETOOTH_DISCONNECTED',
+          'Bluetooth desconectado por el sistema',
+          false,
+        );
+        this.isConnected = false;
+        this.scheduleReconnect();
+      });
+
+      DeviceEventEmitter.addListener('BTPrinterConnected', async () => {
+        console.log('[Bluetooth] 🟢 Evento de conexión detectado');
+        await this.addLog('BLUETOOTH_CONNECTED', 'Bluetooth conectado', true);
+        this.isConnected = true;
+      });
+    } catch (error) {
+      console.warn('[Bluetooth] No se pudieron configurar listeners:', error);
+    }
+  }
+
+  /**
+   * Configura listener para cambios de estado de la app
+   * Importante: Android puede desconectar Bluetooth cuando la app va a background
+   */
+  private setupAppStateListener(): void {
+    AppState.addEventListener(
+      'change',
+      async (nextAppState: AppStateStatus) => {
+        if (nextAppState === 'active' && this.currentPrinter) {
+          // App volvió al foreground, verificar conexión
+          console.log('[Bluetooth] App activa, verificando conexión...');
+          await this.addLog(
+            'APP_FOREGROUND',
+            'App en primer plano, verificando conexión',
+            true,
+          );
+
+          // Pequeño delay para dar tiempo al Bluetooth de estabilizarse
+          setTimeout(() => {
+            this.verifyConnection();
+          }, 1000);
+        } else if (nextAppState === 'background') {
+          console.log('[Bluetooth] App en background');
+          await this.addLog(
+            'APP_BACKGROUND',
+            'App en segundo plano - posible desconexión',
+            true,
+          );
+        }
+      },
+    );
+  }
+
+  /**
+   * Verifica si la conexión sigue activa
+   */
+  private async verifyConnection(): Promise<void> {
+    if (!this.currentPrinter || !this.isConnected) return;
+
+    try {
+      await BluetoothEscposPrinter.printerInit();
+      console.log('[Bluetooth] ✅ Conexión verificada correctamente');
+    } catch (error) {
+      console.log('[Bluetooth] ❌ Conexión perdida, iniciando reconexión...');
+      await this.addLog(
+        'CONNECTION_LOST',
+        'Conexión perdida durante verificación',
+        false,
+      );
+      this.isConnected = false;
+      this.scheduleReconnect();
+    }
+  }
+
+  /**
+   * Programa un intento de reconexión automática
+   */
+  private scheduleReconnect(): void {
+    // Cancelar intentos previos
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+
+    console.log('[Bluetooth] Reconexión programada en 3 segundos...');
+    this.reconnectTimer = setTimeout(async () => {
+      await this.attemptReconnect();
+    }, 3000);
+  }
+
+  /**
+   * Intenta reconectar automáticamente
+   */
+  private async attemptReconnect(): Promise<void> {
+    if (this.isConnected || !this.currentPrinter) return;
+
+    console.log('[Bluetooth] Intentando reconexión automática...');
+    await this.addLog(
+      'AUTO_RECONNECT_ATTEMPT',
+      `Intentando reconectar a ${this.currentPrinter.name}`,
+      true,
+    );
+
+    const success = await this.connectToPrinter(this.currentPrinter, {
+      silent: true,
+    });
+
+    if (success) {
+      console.log('[Bluetooth] ✅ Reconexión automática exitosa');
+      await this.addLog(
+        'AUTO_RECONNECT_SUCCESS',
+        `Reconectado exitosamente a ${this.currentPrinter.name}`,
+        true,
+      );
+    } else {
+      console.log('[Bluetooth] ❌ Reconexión automática falló');
+      await this.addLog(
+        'AUTO_RECONNECT_FAILED',
+        'Fallo en reconexión automática',
+        false,
+      );
+      // Reintentar en 10 segundos
+      this.reconnectTimer = setTimeout(() => {
+        this.attemptReconnect();
+      }, 10000);
+    }
+  }
+
+  /**
+   * Agrega un log de operación Bluetooth
+   */
+  private async addLog(
+    action: string,
+    details: string,
+    success: boolean,
+  ): Promise<void> {
+    const entry: BluetoothLogEntry = {
+      timestamp: new Date().toISOString(),
+      action,
+      details,
+      success,
+    };
+
+    this.logs.unshift(entry);
+
+    if (this.logs.length > MAX_LOG_ENTRIES) {
+      this.logs = this.logs.slice(0, MAX_LOG_ENTRIES);
+    }
+
+    await this.saveLogs();
+  }
+
+  /**
+   * Guarda logs en AsyncStorage
+   */
+  private async saveLogs(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(this.logs));
+    } catch (error) {
+      console.error('Error saving Bluetooth logs:', error);
+    }
+  }
+
+  /**
+   * Carga logs desde AsyncStorage
+   */
+  private async loadLogs(): Promise<void> {
+    try {
+      const saved = await AsyncStorage.getItem(LOGS_STORAGE_KEY);
+      if (saved) {
+        this.logs = JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Error loading Bluetooth logs:', error);
+      this.logs = [];
+    }
+  }
+
+  /**
+   * Limpia todos los logs
+   */
+  async clearLogs(): Promise<void> {
+    try {
+      this.logs = [];
+      await AsyncStorage.removeItem(LOGS_STORAGE_KEY);
+    } catch (error) {
+      console.error('Error clearing Bluetooth logs:', error);
+    }
+  }
 
   /**
    * Solicita permisos de Bluetooth en Android
@@ -62,10 +283,22 @@ class BluetoothPrinterService {
       const enabled = await BluetoothManager.isBluetoothEnabled();
       if (!enabled) {
         await BluetoothManager.enableBluetooth();
+        await this.addLog('ENABLE_BLUETOOTH', 'Bluetooth habilitado', true);
+      } else {
+        await this.addLog(
+          'CHECK_BLUETOOTH',
+          'Bluetooth ya estaba habilitado',
+          true,
+        );
       }
       return true;
     } catch (error) {
       console.error('Error enabling Bluetooth:', error);
+      await this.addLog(
+        'ENABLE_BLUETOOTH',
+        `Error: ${error instanceof Error ? error.message : 'Desconocido'}`,
+        false,
+      );
       return false;
     }
   }
@@ -90,6 +323,11 @@ class BluetoothPrinterService {
         return [];
       }
 
+      await this.addLog(
+        'SCAN_START',
+        'Iniciando escaneo de dispositivos',
+        true,
+      );
       const devices = await BluetoothManager.scanDevices();
 
       // La librería suele devolver un string JSON con { paired: [], found: [] }
@@ -170,9 +408,20 @@ class BluetoothPrinterService {
         return a.name.localeCompare(b.name);
       });
 
+      await this.addLog(
+        'SCAN_COMPLETE',
+        `Encontrados ${printers.length} dispositivos`,
+        true,
+      );
+
       return printers;
     } catch (error) {
       console.error('Error scanning printers:', error);
+      await this.addLog(
+        'SCAN_ERROR',
+        `Error: ${error instanceof Error ? error.message : 'Desconocido'}`,
+        false,
+      );
       Alert.alert('Error', 'No se pudo escanear impresoras Bluetooth');
       return [];
     }
@@ -206,6 +455,12 @@ class BluetoothPrinterService {
       this.currentPrinter = printer;
       this.isConnected = true;
 
+      await this.addLog(
+        'CONNECT_SUCCESS',
+        `Conectado a ${printer.name} (${printer.address})`,
+        true,
+      );
+
       // Guardar impresora seleccionada
       await this.savePrinter(printer);
 
@@ -214,6 +469,14 @@ class BluetoothPrinterService {
       console.error('Error connecting to printer:', error);
       this.currentPrinter = null;
       this.isConnected = false;
+
+      await this.addLog(
+        'CONNECT_ERROR',
+        `Error conectando a ${printer.name}: ${
+          error?.message || 'Desconocido'
+        }`,
+        false,
+      );
 
       if (!options?.silent) {
         const message =
@@ -234,12 +497,25 @@ class BluetoothPrinterService {
    */
   async disconnect(): Promise<void> {
     try {
+      // Cancelar reconexiones automáticas
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+
       if (this.isConnected && this.currentPrinter) {
+        const printerName = this.currentPrinter.name;
         await BluetoothManager.disconnect();
         this.isConnected = false;
+        await this.addLog('DISCONNECT', `Desconectado de ${printerName}`, true);
       }
     } catch (error) {
       console.error('Error disconnecting printer:', error);
+      await this.addLog(
+        'DISCONNECT_ERROR',
+        `Error: ${error instanceof Error ? error.message : 'Desconocido'}`,
+        false,
+      );
     }
   }
 
@@ -835,6 +1111,60 @@ class BluetoothPrinterService {
       this.isConnected = false;
     } catch (error) {
       console.error('Error clearing saved printer:', error);
+    }
+  }
+
+  /**
+   * Obtiene información de logs de Bluetooth
+   */
+  async getBluetoothLogs(): Promise<string> {
+    try {
+      const isEnabled = await BluetoothManager.isBluetoothEnabled();
+      const status = this.getStatus();
+
+      const header: string[] = [
+        '=== INFORMACIÓN DE BLUETOOTH ===',
+        '',
+        `Fecha: ${new Date().toLocaleString('es-MX')}`,
+        `Bluetooth Habilitado: ${isEnabled ? 'Sí' : 'No'}`,
+        `Estado Conexión: ${status.connected ? 'Conectado' : 'Desconectado'}`,
+        '',
+        '=== IMPRESORA ACTUAL ===',
+        status.printer ? `Nombre: ${status.printer.name}` : 'Ninguna',
+        status.printer ? `Dirección: ${status.printer.address}` : '',
+        status.printer?.paired !== undefined
+          ? `Emparejada: ${status.printer.paired ? 'Sí' : 'No'}`
+          : '',
+        '',
+        `=== HISTORIAL DE OPERACIONES (${this.logs.length}) ===`,
+        '',
+      ];
+
+      const logEntries = this.logs.map(log => {
+        const date = new Date(log.timestamp);
+        const time = date.toLocaleTimeString('es-MX');
+        const status = log.success ? '✓' : '✗';
+        return `[${time}] ${status} ${log.action}\n  ${log.details}`;
+      });
+
+      const footer: string[] = [
+        '',
+        '=== NOTAS ===',
+        'Estos logs son capturados por la app.',
+        'Para logs HCI del sistema (requiere ADB):',
+        '1. Opciones de Desarrollador',
+        '2. Habilitar "Registro HCI de Bluetooth"',
+        '3. adb pull /sdcard/btsnoop_hci.log',
+      ];
+
+      return [...header, ...logEntries, ...footer]
+        .filter(line => line !== undefined && line !== null)
+        .join('\n');
+    } catch (error) {
+      console.error('Error getting Bluetooth logs:', error);
+      return `Error al obtener logs: ${
+        error instanceof Error ? error.message : 'Error desconocido'
+      }`;
     }
   }
 }

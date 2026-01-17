@@ -202,9 +202,9 @@ class DeviceInfoService {
     try {
       // Idealmente usar react-native-device-info para obtener la versión real
       // Por ahora retornamos un valor placeholder
-      return '1.1.0';
+      return '1.1.1';
     } catch (error) {
-      return '1.1.0';
+      return '1.1.1';
     }
   }
 

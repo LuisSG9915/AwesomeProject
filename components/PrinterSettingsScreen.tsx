@@ -7,6 +7,7 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { Icon } from 'react-native-elements';
 import BluetoothPrinterService, {
@@ -29,6 +30,8 @@ export default function PrinterSettingsScreen() {
     null,
   );
   const [isConnected, setIsConnected] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [bluetoothLogs, setBluetoothLogs] = useState<string>('');
 
   useEffect(() => {
     loadCurrentPrinter();
@@ -171,8 +174,25 @@ export default function PrinterSettingsScreen() {
     'Eliminar Impresora',
   );
 
+  const handleViewLogs = TrazabilidadService.wrapOnClick(
+    async () => {
+      setShowLogs(!showLogs);
+      if (!showLogs) {
+        const logs = await BluetoothPrinterService.getBluetoothLogs();
+        setBluetoothLogs(logs);
+      }
+    },
+    'PrinterSettingsScreen',
+    'ver_logs_bluetooth',
+    'button',
+    'Ver Logs',
+  );
+
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+    >
       <Text style={styles.title}>Configuración de Impresora</Text>
 
       {/* Estado Actual */}
@@ -315,6 +335,29 @@ export default function PrinterSettingsScreen() {
           <Text style={styles.scanningText}>Buscando impresoras...</Text>
         )}
 
+        <TouchableOpacity style={styles.logsButton} onPress={handleViewLogs}>
+          <Icon
+            name={showLogs ? 'visibility-off' : 'visibility'}
+            type="material"
+            color="#fff"
+            size={20}
+          />
+          <Text style={styles.logsButtonText}>
+            {showLogs ? 'Ocultar Logs' : 'Ver Logs Bluetooth'}
+          </Text>
+        </TouchableOpacity>
+
+        {showLogs && (
+          <View style={styles.logsContainer}>
+            <Text style={styles.logsTitle}>Logs de Bluetooth</Text>
+            <ScrollView style={styles.logsScrollView}>
+              <Text style={styles.logsContent}>
+                {bluetoothLogs || 'No hay logs disponibles'}
+              </Text>
+            </ScrollView>
+          </View>
+        )}
+
         {/* Lista de Impresoras */}
         {printers.length > 0 && (
           <View style={styles.printersList}>
@@ -413,7 +456,7 @@ export default function PrinterSettingsScreen() {
           • Usa el botón "Probar" para verificar la conexión
         </Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -421,6 +464,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  contentContainer: {
     padding: SPACING.m,
   },
   title: {
@@ -678,5 +723,44 @@ const styles = StyleSheet.create({
     color: COLORS.primaryDark,
     marginBottom: 4,
     marginLeft: 28,
+  },
+  logsButton: {
+    backgroundColor: COLORS.info,
+    paddingVertical: SPACING.m,
+    borderRadius: BORDER_RADIUS.l,
+    alignItems: 'center',
+    marginTop: SPACING.m,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  logsButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  logsContainer: {
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.m,
+    padding: SPACING.m,
+    marginTop: SPACING.m,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    maxHeight: 800,
+  },
+  logsScrollView: {
+    maxHeight: 750,
+  },
+  logsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.s,
+  },
+  logsContent: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontFamily: 'monospace',
+    lineHeight: 18,
   },
 });
