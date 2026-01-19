@@ -14,6 +14,7 @@ public class BatteryOptimizationPackage implements ReactPackage {
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new BatteryOptimizationModule(reactContext));
+        modules.add(new TaskerWakeUpModule(reactContext));
         return modules;
     }
 

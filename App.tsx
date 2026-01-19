@@ -42,6 +42,7 @@ import { bitacoraService } from './services/BitacoraService';
 import TrazabilidadService from './services/TrazabilidadService';
 import NotificationPermissionService from './services/NotificationPermissionService';
 import { batteryOptimizationService } from './services/BatteryOptimization';
+import TaskerWakeUpService from './services/TaskerWakeUpService';
 import {
   APP_NAME,
   COLORS,
@@ -97,6 +98,9 @@ function App() {
   useEffect(() => {
     // App initialization
     console.log('App initialized');
+
+    // Inicializar servicio para despertar Tasker
+    TaskerWakeUpService.initialize();
 
     // Conectar automáticamente a la última impresora usada
     BluetoothPrinterService.connectToSavedPrinter().catch(err => {
