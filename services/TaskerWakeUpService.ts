@@ -13,7 +13,7 @@ const TASKER_TASK_NAME = 'Keepalive'; // Nombre EXACTO de la tarea en Tasker (se
 class TaskerWakeUpService {
   private appStateSubscription: any = null;
   private lastWakeUpTime: number = 0;
-  private readonly WAKE_UP_COOLDOWN = 5000; // 5 segundos entre intentos
+  private readonly WAKE_UP_COOLDOWN = 10000; // 30 segundos entre intentos (evita loops)
 
   /**
    * Inicializa el servicio de despertar Tasker
@@ -49,8 +49,11 @@ class TaskerWakeUpService {
     console.log('[TaskerWakeUp] 📤 Enviando broadcast inicial...');
     this.wakeUpTasker('app_launch');
 
-    // Configurar listener para cambios de estado de la app
+    // Configurar listener para cuando vuelves a la app
+    // Cooldown de 30 segundos evita loops cuando Tasker se abre
     this.setupAppStateListener();
+    console.log('[TaskerWakeUp] 🎧 Listener de AppState ACTIVADO');
+    console.log('[TaskerWakeUp] ⏰ Cooldown: 30 segundos entre ejecuciones');
     console.log('[TaskerWakeUp] ✅ Servicio inicializado correctamente');
   }
 
@@ -133,18 +136,20 @@ class TaskerWakeUpService {
       }
 
       console.log('[TaskerWakeUp] ✅ Módulo nativo OK');
-      console.log('[TaskerWakeUp] 📤 Preparando broadcast...');
-      console.log(`[TaskerWakeUp] 📡 Acción: ${TASKER_ACTION}`);
+      console.log('[TaskerWakeUp] ☢️ Usando ESTRATEGIA NUCLEAR');
       console.log(`[TaskerWakeUp] 🎯 Tarea: ${TASKER_TASK_NAME}`);
       console.log(
         `[TaskerWakeUp] 📦 Extras: source="${source}", timestamp="${now}"`,
       );
+      console.log(
+        '[TaskerWakeUp] 💡 Si Tasker está cerrado, se abrirá brevemente',
+      );
 
-      // Enviar el broadcast silencioso usando el módulo nativo
+      // Usar estrategia NUCLEAR: abre Tasker si está muerto
       const startTime = Date.now();
-      console.log('[TaskerWakeUp] 🚀 Enviando broadcast...');
+      console.log('[TaskerWakeUp] 🚀 Lanzando estrategia nuclear...');
 
-      await TaskerWakeUpModule.sendBroadcast(TASKER_ACTION, {
+      await TaskerWakeUpModule.wakeUpTaskerNuclear({
         task_name: TASKER_TASK_NAME,
         source: source,
         timestamp: now.toString(),

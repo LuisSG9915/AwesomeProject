@@ -59,5 +59,12 @@
         <action android:name="com.awesomeproject.SYNC_DATOS" />
       </intent-filter>
     </receiver>
+
+    <!-- Receiver para respuestas de Tasker (verificación de que está activo) -->
+    <receiver android:name=".TaskerResponseReceiver" android:exported="true">
+      <intent-filter>
+        <action android:name="com.awesomeproject.TASKER_RESPONSE" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>
