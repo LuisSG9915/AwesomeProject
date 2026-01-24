@@ -801,7 +801,7 @@ export default function SalesScreen() {
                     onPress={() => {
                       setSelectedClient(item);
                       setCart([]);
-                      setMetodoPago(null);
+                      setMetodoPago(item.credito ? 'credito' : null);
                       setClienteModalOpen(false);
                       setSearchQuery('');
                       setFilteredClientes(clientes);
