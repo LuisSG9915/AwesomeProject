@@ -296,6 +296,13 @@ export default function SalesScreen() {
 
       setProductos(productosFormateados);
       setFilteredProductos(productosFormateados);
+
+      // Establecer automáticamente el método de pago según el tipo de cliente
+      if (selectedClient.credito) {
+        setMetodoPago('credito');
+      } else {
+        setMetodoPago(null);
+      }
     }
   }, [selectedClient, currentSucursal]);
 
