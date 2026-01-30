@@ -572,32 +572,32 @@ class BackgroundSyncService {
       }
 
       // ARRASTRE DE TRAZABILIDAD: Enviar trazabilidad de clicks de los últimos 7 días
-      try {
-        console.log(
-          '[BackgroundSync] 📤 Iniciando arrastre de trazabilidad...',
-        );
-        const trazabilidadResult =
-          await FullSyncService.sendPendingTrazabilidadToServer(
-            sucursal,
-            idUsuario,
-          );
-        if (trazabilidadResult.success && trazabilidadResult.sent > 0) {
-          console.log(
-            `[BackgroundSync] ✅ Trazabilidad enviada: ${trazabilidadResult.sent}`,
-          );
-        } else if (!trazabilidadResult.success) {
-          console.warn(
-            '[BackgroundSync] ⚠️ Error en arrastre de trazabilidad (no crítico):',
-            trazabilidadResult.error,
-          );
-        }
-      } catch (trazabilidadError) {
-        // No hacer fallar la sincronización por errores de trazabilidad
-        console.warn(
-          '[BackgroundSync] ⚠️ Error en arrastre de trazabilidad:',
-          trazabilidadError,
-        );
-      }
+      // // // // try {
+      // // // //   console.log(
+      // // // //     '[BackgroundSync] 📤 Iniciando arrastre de trazabilidad...',
+      // // // //   );
+      // // // //   const trazabilidadResult =
+      // // // //     await FullSyncService.sendPendingTrazabilidadToServer(
+      // // // //       sucursal,
+      // // // //       idUsuario,
+      // // // //     );
+      // // // //   if (trazabilidadResult.success && trazabilidadResult.sent > 0) {
+      // // // //     console.log(
+      // // // //       `[BackgroundSync] ✅ Trazabilidad enviada: ${trazabilidadResult.sent}`,
+      // // // //     );
+      // // // //   } else if (!trazabilidadResult.success) {
+      // // // //     console.warn(
+      // // // //       '[BackgroundSync] ⚠️ Error en arrastre de trazabilidad (no crítico):',
+      // // // //       trazabilidadResult.error,
+      // // // //     );
+      // // // //   }
+      // // // // } catch (trazabilidadError) {
+      // // // //   // No hacer fallar la sincronización por errores de trazabilidad
+      // // // //   console.warn(
+      // // // //     '[BackgroundSync] ⚠️ Error en arrastre de trazabilidad:',
+      // // // //     trazabilidadError,
+      // // // //   );
+      // // // // }
 
       // Actualizar estado según resultado
       const now = new Date();

@@ -534,32 +534,39 @@ export default function DataViewScreen() {
   );
 
   const renderPrecio = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{item.descripcion}</Text>
-          <Text style={styles.cardPrice}>${item.precio?.toFixed(2)}</Text>
+    <TouchableOpacity onPress={() => consoleRealm('precio', item)}>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{item.descripcion}</Text>
+            <Text style={styles.cardPrice}>${item.precio?.toFixed(2)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => handleDelete(item.id, 'precios')}
+            style={styles.deleteButton}
+          >
+            <Icon
+              name="delete"
+              type="material"
+              color={COLORS.error}
+              size={24}
+            />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => handleDelete(item.id, 'precios')}
-          style={styles.deleteButton}
-        >
-          <Icon name="delete" type="material" color={COLORS.error} size={24} />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
-        <Text style={styles.cardText}>Clave Producto: {item.claveProd}</Text>
-        <Text style={styles.cardText}>
-          Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
-        </Text>
-        {item.syncedAr && (
+        <View style={styles.cardBody}>
+          <Text style={styles.cardText}>ID Cliente: {item.idCliente}</Text>
+          <Text style={styles.cardText}>Clave Producto: {item.claveProd}</Text>
           <Text style={styles.cardText}>
-            Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            Actualizado: {item.fechaAct?.toLocaleDateString() || 'N/A'}
           </Text>
-        )}
+          {item.syncedAr && (
+            <Text style={styles.cardText}>
+              Sync (MX): {item.syncedAr.toLocaleString('es-MX')}
+            </Text>
+          )}
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderInventario = ({ item }: { item: any }) => (

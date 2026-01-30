@@ -20,7 +20,16 @@ public class TaskerResponseReceiver extends BroadcastReceiver {
     }
     
     public static void setResponseListener(ResponseListener listener) {
+        Log.d(TAG, "╔═══════════════════════════════════════════════════════╗");
+        Log.d(TAG, "║    🔧 CONFIGURANDO RESPONSE LISTENER               ║");
+        Log.d(TAG, "╚═══════════════════════════════════════════════════════╝");
+        Log.d(TAG, "📥 Listener recibido: " + (listener != null ? listener.getClass().getName() : "NULL"));
+        
         responseListener = listener;
+        
+        Log.d(TAG, "✅ Listener estático configurado");
+        Log.d(TAG, "🔍 Verificación: responseListener = " + (responseListener != null ? "NOT NULL" : "NULL"));
+        Log.d(TAG, "═══════════════════════════════════════════════════════");
     }
     
     @Override
@@ -38,16 +47,33 @@ public class TaskerResponseReceiver extends BroadcastReceiver {
             
             Log.d(TAG, "📋 Request ID: " + requestId);
             Log.d(TAG, "✅ Status: " + status);
+            Log.d(TAG, "───────────────────────────────────────────────────────");
+            Log.d(TAG, "🔍 VERIFICANDO LISTENER ESTÁTICO...");
+            Log.d(TAG, "   responseListener = " + (responseListener != null ? "NOT NULL ✅" : "NULL ❌"));
+            
+            if (responseListener != null) {
+                Log.d(TAG, "   Listener class: " + responseListener.getClass().getName());
+            }
             
             if (responseListener != null && requestId != null) {
+                Log.d(TAG, "───────────────────────────────────────────────────────");
                 Log.d(TAG, "📢 Notificando al listener...");
-                responseListener.onTaskerResponse(requestId, status);
+                try {
+                    responseListener.onTaskerResponse(requestId, status);
+                    Log.d(TAG, "✅ Listener notificado exitosamente");
+                } catch (Exception e) {
+                    Log.e(TAG, "❌ Error al notificar listener: " + e.getMessage(), e);
+                }
             } else {
+                Log.d(TAG, "───────────────────────────────────────────────────────");
+                Log.e(TAG, "❌ NO SE PUEDE NOTIFICAR AL LISTENER:");
                 if (responseListener == null) {
-                    Log.w(TAG, "⚠️ No hay listener registrado");
+                    Log.e(TAG, "   ❌ No hay listener registrado (responseListener == null)");
+                    Log.e(TAG, "   💡 Esto significa que el listener estático se perdió");
+                    Log.e(TAG, "   💡 Posible causa: R8/ProGuard ofuscó el código");
                 }
                 if (requestId == null) {
-                    Log.w(TAG, "⚠️ Request ID es null");
+                    Log.e(TAG, "   ⚠️ Request ID es null");
                 }
             }
         } else {

@@ -47,9 +47,19 @@ public class TaskerWakeUpModule extends ReactContextBaseJavaModule implements Ta
         super(context);
         this.reactContext = context;
         
+        Log.d(TAG, "╔═══════════════════════════════════════════════════════╗");
+        Log.d(TAG, "║    🚀 INICIALIZANDO TASKER WAKE UP MODULE          ║");
+        Log.d(TAG, "╚═══════════════════════════════════════════════════════╝");
+        Log.d(TAG, "📱 Context: " + context.getClass().getSimpleName());
+        Log.d(TAG, "🔧 Registrando listener para respuestas de Tasker...");
+        
         // Registrar listener para respuestas de Tasker
         TaskerResponseReceiver.setResponseListener(this);
-        Log.d(TAG, "✅ Listener de respuestas registrado");
+        
+        Log.d(TAG, "✅ Listener de respuestas registrado exitosamente");
+        Log.d(TAG, "🎯 Listener class: " + this.getClass().getName());
+        Log.d(TAG, "💡 Este listener recibirá notificaciones cuando Tasker responda");
+        Log.d(TAG, "═══════════════════════════════════════════════════════");
     }
     
     @Override
@@ -323,6 +333,12 @@ public class TaskerWakeUpModule extends ReactContextBaseJavaModule implements Ta
             new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                 @Override
                 public void run() {
+                    Log.d(TAG, "╔═══════════════════════════════════════════════════════╗");
+                    Log.d(TAG, "║  ⏱️ TIMEOUT HANDLER EJECUTÁNDOSE                   ║");
+                    Log.d(TAG, "╚═══════════════════════════════════════════════════════╝");
+                    Log.d(TAG, "🆔 Request ID a verificar: " + requestId);
+                    Log.d(TAG, "📊 Requests pendientes totales: " + pendingRequests.size());
+                    
                     // Verificar si el request sigue pendiente
                     PendingRequest request = pendingRequests.get(requestId);
                     
@@ -332,10 +348,12 @@ public class TaskerWakeUpModule extends ReactContextBaseJavaModule implements Ta
                         Log.d(TAG, "║  ⏱️ TIMEOUT - TASKER NO RESPONDIÓ                  ║");
                         Log.d(TAG, "╚═══════════════════════════════════════════════════════╝");
                         Log.w(TAG, "⚠️ No se recibió respuesta de Tasker en " + RESPONSE_TIMEOUT_MS + "ms");
+                        Log.w(TAG, "❌ Request sigue en pendientes - Tasker NO está respondiendo");
                         Log.w(TAG, "☢️ Iniciando ACTIVACIÓN NUCLEAR...");
                         
                         // Remover de pendientes
                         pendingRequests.remove(requestId);
+                        Log.d(TAG, "🗑️ Request removido de pendientes");
                         
                         // Abrir Tasker para revivirlo
                         Intent launchIntent = reactContext.getPackageManager()

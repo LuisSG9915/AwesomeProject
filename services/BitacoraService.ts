@@ -1430,47 +1430,34 @@ class BitacoraService {
     );
 
     try {
-      // Preparar payload para el servidor
+      // Preparar payload para el servidor (solo campos que espera el SP)
       const payload = bitacoras.map(b => ({
         idBitacoraMovil: b.idBitacoraMovil,
         fechaInicio: this.toMexicoTime(b.fechaInicio),
         fechaFinal: b.fechaFinal ? this.toMexicoTime(b.fechaFinal) : null,
         duracionMs: b.duracionMs,
         idUsuario: b.idUsuario,
-        nombreUsuario: b.nombreUsuario,
         ipDispositivo: b.ipDispositivo,
         nombreDispositivo: b.nombreDispositivo,
-        sistemaOperativo: b.sistemaOperativo,
         versionApp: b.versionApp,
-        tipoConexion: b.tipoConexion,
         tipoConexionDetallado: b.tipoConexionDetallado,
         estadoConexion: b.estadoConexion,
         intensidadSenal: b.intensidadSenal,
-        velocidadDescargaMbps: b.velocidadDescargaMbps,
-        velocidadCargaMbps: b.velocidadCargaMbps,
-        latenciaMs: b.latenciaMs,
-        esConexionMetered: b.esConexionMetered,
-        appState: b.appState,
-        pantalla: b.pantalla,
-        origenSync: b.origenSync,
         sucursal: b.sucursal,
         tabla: b.tabla,
-        tipoSync: b.tipoSync,
         endpoint: b.endpoint,
         registrosLeidos: b.registrosLeidos,
         registrosGuardados: b.registrosGuardados,
         registrosActualizados: b.registrosActualizados,
-        registrosEliminados: b.registrosEliminados,
         exitoso: b.exitoso,
         codigoError: b.codigoError,
-        descripcionError: b.descripcionError,
         stackTrace: b.stackTrace,
         detallesJSON: b.detallesJSON,
       }));
 
       const url = `${
         this.apiBaseUrl
-      }/api/MovilesVentas/sp_BitacoraSyncArrastreJSON?sucursal=${
+      }/api/MovilesVentas/sp_BitacoraSyncArrastreReducidoJSON?sucursal=${
         this.currentSucursal
       }&idUsuario=${this.currentUserId || 0}`;
 

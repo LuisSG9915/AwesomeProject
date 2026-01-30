@@ -328,10 +328,10 @@ module.exports = async (taskData: any) => {
 
     console.log('[TaskerSync] 📤 Iniciando arrastre de trazabilidad...');
     try {
-      await FullSyncService.sendPendingTrazabilidadToServer(
-        sucursal,
-        idUsuario,
-      );
+      // await FullSyncService.sendPendingTrazabilidadToServer(
+      //   sucursal,
+      //   idUsuario,
+      // );
       console.log('[TaskerSync] ✅ Trazabilidad completado');
     } catch (e) {
       console.log('[TaskerSync] ⚠️ Trazabilidad error (no crítico):', e);

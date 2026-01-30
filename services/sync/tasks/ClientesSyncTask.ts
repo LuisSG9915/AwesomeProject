@@ -36,11 +36,40 @@ export class ClientesSyncTask extends SyncTask {
       const nowMexico = this.getMexicoNow();
       let registrosGuardados = 0;
       let registrosActualizados = 0;
+      let registrosEliminados = 0;
 
       console.log(`[ClientesSyncTask] Leídos ${registrosLeidos} clientes`);
 
       // Sincronizar con Realm
       this.realm.write(() => {
+        // Crear Set con IDs del servidor para búsqueda rápida
+        const serverIds = new Set(clientes.map((c: any) => c.id));
+
+        // Obtener todos los clientes locales
+        const localClientes = this.realm.objects('ClienteFull');
+        const clientesToDelete: Realm.Object[] = [];
+
+        // Identificar clientes locales que no están en el servidor
+        for (const localCliente of localClientes) {
+          const localId = (localCliente as any).id;
+          if (!serverIds.has(localId)) {
+            clientesToDelete.push(localCliente);
+          }
+        }
+
+        // Eliminar clientes que no están en el servidor
+        for (const clienteToDelete of clientesToDelete) {
+          this.realm.delete(clienteToDelete);
+          registrosEliminados++;
+        }
+
+        if (registrosEliminados > 0) {
+          console.log(
+            `[ClientesSyncTask] Eliminados ${registrosEliminados} clientes que no están en el servidor`,
+          );
+        }
+
+        // Actualizar/Insertar clientes del servidor
         for (const cliente of clientes) {
           const existing = this.realm.objectForPrimaryKey(
             'ClienteFull',
@@ -72,7 +101,7 @@ export class ClientesSyncTask extends SyncTask {
       });
 
       console.log(
-        `[ClientesSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}`,
+        `[ClientesSyncTask] Guardados: ${registrosGuardados}, Actualizados: ${registrosActualizados}, Eliminados: ${registrosEliminados}`,
       );
 
       return {

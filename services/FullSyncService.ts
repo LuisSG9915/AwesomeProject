@@ -334,21 +334,21 @@ class FullSyncService {
     try {
       // Enviar bitácoras de tablas
       const resultBitacoras = await bitacoraService.enviarBitacorasPendientes();
-
+      
       // Enviar sesiones
-      const resultSesiones = await bitacoraService.enviarSesionesPendientes();
+      // const resultSesiones = await bitacoraService.enviarSesionesPendientes();
 
       // Limpiar bitácoras antiguas (más de 7 días)
       bitacoraService.limpiarBitacorasAntiguas();
 
-      const totalEnviadas = resultBitacoras.enviadas + resultSesiones.enviadas;
+      const totalEnviadas = resultBitacoras.enviadas;
 
       console.log(`[FullSyncService] Bitácoras enviadas: ${totalEnviadas}`);
 
       return {
-        success: resultBitacoras.success && resultSesiones.success,
+        success: resultBitacoras.success,
         enviadas: totalEnviadas,
-        error: resultBitacoras.error || resultSesiones.error,
+        error: resultBitacoras.error,
       };
     } catch (error: any) {
       console.error('[FullSyncService] Error en arrastre de bitácoras:', error);
@@ -595,6 +595,10 @@ class FullSyncService {
           run: async () => {
             const tableName = 'Precio';
             const last = this.getLastSyncedAr(tableName) || new Date(0);
+            console.log('AQUI REVISAMOS');
+            console.log(this.getLastSyncedAr(tableName));
+            console.log(new Date(0));
+            console.log('TERMINAMOS DE REVISAR');
             const fechaInicial = this.formatDateTimeForApi(last);
             const url = `${
               this.apiBaseUrl
@@ -2008,27 +2012,11 @@ class FullSyncService {
     tresDiasAtras.setDate(tresDiasAtras.getDate() - 3);
     tresDiasAtras.setHours(0, 0, 0, 0);
 
-    // ========================================
-    // BITÁCORA: Registrar inicio de arrastre de ventas
-    // ========================================
-    const url = `${this.apiBaseUrl}/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
-    const bitacoraId = await bitacoraService.registrarInicioSync(
-      'ArrastreVentas',
-      'incremental',
-      url,
-      undefined,
-      'auto',
-    );
-
     try {
       if (!this.isInitialized || !this.realm) {
         await this.initialize();
       }
       if (!this.realm) {
-        await bitacoraService.registrarFinSync(bitacoraId, {
-          exitoso: false,
-          error: new Error('Realm no inicializado'),
-        });
         return { success: false, sent: 0, error: 'Realm no inicializado' };
       }
 
@@ -2060,114 +2048,122 @@ class FullSyncService {
 
       if (ventasLocales.length === 0) {
         console.log('[FullSyncService] No hay ventas pendientes para enviar');
-        await bitacoraService.registrarFinSync(bitacoraId, {
-          exitoso: true,
-          registrosLeidos: 0,
-          registrosGuardados: 0,
-          detalles: { mensaje: 'Sin ventas pendientes' },
-        });
         return { success: true, sent: 0 };
       }
 
-      // Función helper para formatear fecha en horario local (sin zona horaria)
-      const formatLocalDate = (
-        date: Date | string | null | undefined,
-      ): string => {
-        const d =
-          date instanceof Date ? date : date ? new Date(date) : new Date();
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const min = String(d.getMinutes()).padStart(2, '0');
-        const ss = String(d.getSeconds()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
-      };
-
-      const payload = ventasLocales.map((venta: any) => {
-        const cliente = venta.cveCliente
-          ? this.getClienteFullById(venta.cveCliente)
-          : null;
-
-        return {
-          sucursal: venta.sucursal ?? sucursal,
-          clave_prod: venta.claveProd ?? 0,
-          Cant_producto: venta.cantProducto ?? 0,
-          precio: venta.precio ?? 0,
-          Cve_cliente: venta.cveCliente ?? 0,
-          fecha: formatLocalDate(venta.fecha ?? new Date()),
-          tipo_pago: venta.tipoPago ?? 1,
-          usuario: idUsuario,
-          longitud: cliente?.longitud ?? 0,
-          latitud: cliente?.latitud ?? 0,
-          id_movil: venta.idMovil,
-          fechaTransfer: new Date().toISOString(),
-          correoFactura: venta.correoFactura ?? '',
-        };
-      });
-
-      console.log(
-        '[TaskerSync] 📦 Payload ventas:',
-        payload.length,
-        'registros',
+      // ========================================
+      // BITÁCORA: Registrar inicio de arrastre de ventas
+      // ========================================
+      const url = `${this.apiBaseUrl}/api/MovilesVentas/sp_MovilesVentasArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
+      const bitacoraId = await bitacoraService.registrarInicioSync(
+        'ArrastreVentas',
+        'incremental',
+        url,
+        undefined,
+        'auto',
       );
 
-      const response = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      try {
+        // Función helper para formatear fecha en horario local (sin zona horaria)
+        const formatLocalDate = (
+          date: Date | string | null | undefined,
+        ): string => {
+          const d =
+            date instanceof Date ? date : date ? new Date(date) : new Date();
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const min = String(d.getMinutes()).padStart(2, '0');
+          const ss = String(d.getSeconds()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+        };
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        console.error(
-          '[FullSyncService] ❌ Error arrastre ventas',
-          response.status,
-          errorText,
+        const payload = ventasLocales.map((venta: any) => {
+          const cliente = venta.cveCliente
+            ? this.getClienteFullById(venta.cveCliente)
+            : null;
+
+          return {
+            sucursal: venta.sucursal ?? sucursal,
+            clave_prod: venta.claveProd ?? 0,
+            Cant_producto: venta.cantProducto ?? 0,
+            precio: venta.precio ?? 0,
+            Cve_cliente: venta.cveCliente ?? 0,
+            fecha: formatLocalDate(venta.fecha ?? new Date()),
+            tipo_pago: venta.tipoPago ?? 1,
+            usuario: idUsuario,
+            longitud: cliente?.longitud ?? 0,
+            latitud: cliente?.latitud ?? 0,
+            id_movil: venta.idMovil,
+            fechaTransfer: new Date().toISOString(),
+            correoFactura: venta.correoFactura ?? '',
+          };
+        });
+
+        console.log(
+          '[TaskerSync] 📦 Payload ventas:',
+          payload.length,
+          'registros',
         );
+
+        const response = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          console.error(
+            '[FullSyncService] ❌ Error arrastre ventas',
+            response.status,
+            errorText,
+          );
+          await bitacoraService.registrarFinSync(bitacoraId, {
+            exitoso: false,
+            registrosLeidos: ventasLocales.length,
+            error: new Error(`HTTP ${response.status}: ${errorText}`),
+            detalles: { endpoint: url },
+          });
+          return {
+            success: false,
+            sent: 0,
+            error: `HTTP ${response.status}: ${errorText}`,
+          };
+        }
+
+        console.log(
+          `[FullSyncService] ✅ Arrastre ventas exitoso: ${payload.length} registros`,
+        );
+
+        // ========================================
+        // BITÁCORA: Registrar fin exitoso
+        // ========================================
         await bitacoraService.registrarFinSync(bitacoraId, {
-          exitoso: false,
+          exitoso: true,
           registrosLeidos: ventasLocales.length,
-          error: new Error(`HTTP ${response.status}: ${errorText}`),
+          registrosGuardados: payload.length,
           detalles: { endpoint: url },
         });
-        return {
-          success: false,
-          sent: 0,
-          error: `HTTP ${response.status}: ${errorText}`,
-        };
+
+        return { success: true, sent: payload.length };
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : 'Error desconocido';
+        console.error('[FullSyncService] ❌ Error arrastre ventas:', error);
+
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: false,
+          error: error instanceof Error ? error : new Error(errorMsg),
+          detalles: { endpoint: url },
+        });
+
+        return { success: false, sent: 0, error: errorMsg };
       }
-
-      console.log(
-        `[FullSyncService] ✅ Arrastre ventas exitoso: ${payload.length} registros`,
-      );
-
-      // ========================================
-      // BITÁCORA: Registrar fin exitoso
-      // ========================================
-      await bitacoraService.registrarFinSync(bitacoraId, {
-        exitoso: true,
-        registrosLeidos: ventasLocales.length,
-        registrosGuardados: payload.length,
-        detalles: { endpoint: url },
-      });
-
-      return { success: true, sent: payload.length };
-    } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : 'Error desconocido';
-      console.error('[FullSyncService] ❌ Error arrastre ventas:', error);
-
-      await bitacoraService.registrarFinSync(bitacoraId, {
-        exitoso: false,
-        error: error instanceof Error ? error : new Error(errorMsg),
-        detalles: { endpoint: url },
-      });
-
-      return { success: false, sent: 0, error: errorMsg };
     } finally {
       // Liberar el mutex siempre, incluso si hay error
       this.isSendingVentas = false;
@@ -2201,27 +2197,11 @@ class FullSyncService {
 
     const LOCAL_COBRANZA_ID_THRESHOLD = 170000000;
 
-    // ========================================
-    // BITÁCORA: Registrar inicio de arrastre de cobranza
-    // ========================================
-    const url = `${this.apiBaseUrl}/api/MovilesVentas/sp_MovilesCobranzaArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
-    const bitacoraId = await bitacoraService.registrarInicioSync(
-      'ArrastreCobranza',
-      'incremental',
-      url,
-      undefined,
-      'auto',
-    );
-
     try {
       if (!this.isInitialized || !this.realm) {
         await this.initialize();
       }
       if (!this.realm) {
-        await bitacoraService.registrarFinSync(bitacoraId, {
-          exitoso: false,
-          error: new Error('Realm no inicializado'),
-        });
         return { success: false, sent: 0, error: 'Realm no inicializado' };
       }
 
@@ -2239,108 +2219,116 @@ class FullSyncService {
 
       if (cobranzaLocal.length === 0) {
         console.log('[FullSyncService] No hay cobranza pendiente para enviar');
-        await bitacoraService.registrarFinSync(bitacoraId, {
-          exitoso: true,
-          registrosLeidos: 0,
-          registrosGuardados: 0,
-          detalles: { mensaje: 'Sin cobranza pendiente' },
-        });
         return { success: true, sent: 0 };
       }
 
-      // Serializar fecha: formatear como string 'YYYY-MM-DD HH:mm:ss.SSS' en hora MX sin conversión a UTC
-      const formatMexicoDate = (
-        date: Date | string | null | undefined,
-      ): string => {
-        const d =
-          date instanceof Date ? date : date ? new Date(date) : new Date();
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        const hh = String(d.getHours()).padStart(2, '0');
-        const min = String(d.getMinutes()).padStart(2, '0');
-        const ss = String(d.getSeconds()).padStart(2, '0');
-        const ms = String(d.getMilliseconds()).padStart(3, '0');
-        return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
-      };
-
-      const payload = cobranzaLocal.map((m: any) => ({
-        idCliente: m.idCliente,
-        nombreCliente: m.nombreCliente,
-        sucursal: m.sucursal,
-        sucursalSegmento: m.sucursalSegmento,
-        saldo: m.saldo,
-        fecha: formatMexicoDate(m.fecha),
-        idSegmento: m.idSegmento,
-        noVenta: m.noVenta,
-        cobrado: m.cobrado ?? 1,
-        id_movil: m.id,
-        tipoPago: m.tipoPago ?? 0,
-        idUsuario: idUsuario,
-      }));
-
-      console.log(
-        '[TaskerSync] 📦 Payload cobranza:',
-        payload.length,
-        'registros',
+      // ========================================
+      // BITÁCORA: Registrar inicio de arrastre de cobranza
+      // ========================================
+      const url = `${this.apiBaseUrl}/api/MovilesVentas/sp_MovilesCobranzaArrastreJSON?sucursal=${sucursal}&idUsuario=${idUsuario}`;
+      const bitacoraId = await bitacoraService.registrarInicioSync(
+        'ArrastreCobranza',
+        'incremental',
+        url,
+        undefined,
+        'auto',
       );
-      console.log({ payload });
-      const response = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        console.error(
-          '[FullSyncService] ❌ Error arrastre cobranza',
-          response.status,
-          errorText,
+      try {
+        // Serializar fecha: formatear como string 'YYYY-MM-DD HH:mm:ss.SSS' en hora MX sin conversión a UTC
+        const formatMexicoDate = (
+          date: Date | string | null | undefined,
+        ): string => {
+          const d =
+            date instanceof Date ? date : date ? new Date(date) : new Date();
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const min = String(d.getMinutes()).padStart(2, '0');
+          const ss = String(d.getSeconds()).padStart(2, '0');
+          const ms = String(d.getMilliseconds()).padStart(3, '0');
+          return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
+        };
+
+        const payload = cobranzaLocal.map((m: any) => ({
+          idCliente: m.idCliente,
+          nombreCliente: m.nombreCliente,
+          sucursal: m.sucursal,
+          sucursalSegmento: m.sucursalSegmento,
+          saldo: m.saldo,
+          fecha: formatMexicoDate(m.fecha),
+          idSegmento: m.idSegmento,
+          noVenta: m.noVenta,
+          cobrado: m.cobrado ?? 1,
+          id_movil: m.id,
+          tipoPago: m.tipoPago ?? 0,
+          idUsuario: idUsuario,
+        }));
+
+        console.log(
+          '[TaskerSync] 📦 Payload cobranza:',
+          payload.length,
+          'registros',
         );
+        console.log({ payload });
+        const response = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          console.error(
+            '[FullSyncService] ❌ Error arrastre cobranza',
+            response.status,
+            errorText,
+          );
+          await bitacoraService.registrarFinSync(bitacoraId, {
+            exitoso: false,
+            registrosLeidos: cobranzaLocal.length,
+            error: new Error(`HTTP ${response.status}: ${errorText}`),
+            detalles: { endpoint: url },
+          });
+          return {
+            success: false,
+            sent: 0,
+            error: `HTTP ${response.status}: ${errorText}`,
+          };
+        }
+
+        console.log(
+          `[FullSyncService] ✅ Arrastre cobranza exitoso: ${payload.length} registros`,
+        );
+
+        // ========================================
+        // BITÁCORA: Registrar fin exitoso
+        // ========================================
         await bitacoraService.registrarFinSync(bitacoraId, {
-          exitoso: false,
+          exitoso: true,
           registrosLeidos: cobranzaLocal.length,
-          error: new Error(`HTTP ${response.status}: ${errorText}`),
+          registrosGuardados: payload.length,
           detalles: { endpoint: url },
         });
-        return {
-          success: false,
-          sent: 0,
-          error: `HTTP ${response.status}: ${errorText}`,
-        };
+
+        return { success: true, sent: payload.length };
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : 'Error desconocido';
+        console.error('[FullSyncService] ❌ Error arrastre cobranza:', error);
+
+        await bitacoraService.registrarFinSync(bitacoraId, {
+          exitoso: false,
+          error: error instanceof Error ? error : new Error(errorMsg),
+          detalles: { endpoint: url },
+        });
+
+        return { success: false, sent: 0, error: errorMsg };
       }
-
-      console.log(
-        `[FullSyncService] ✅ Arrastre cobranza exitoso: ${payload.length} registros`,
-      );
-
-      // ========================================
-      // BITÁCORA: Registrar fin exitoso
-      // ========================================
-      await bitacoraService.registrarFinSync(bitacoraId, {
-        exitoso: true,
-        registrosLeidos: cobranzaLocal.length,
-        registrosGuardados: payload.length,
-        detalles: { endpoint: url },
-      });
-
-      return { success: true, sent: payload.length };
-    } catch (error) {
-      const errorMsg =
-        error instanceof Error ? error.message : 'Error desconocido';
-      console.error('[FullSyncService] ❌ Error arrastre cobranza:', error);
-
-      await bitacoraService.registrarFinSync(bitacoraId, {
-        exitoso: false,
-        error: error instanceof Error ? error : new Error(errorMsg),
-        detalles: { endpoint: url },
-      });
-
-      return { success: false, sent: 0, error: errorMsg };
     } finally {
       // Liberar el mutex siempre, incluso si hay error
       this.isSendingCobranza = false;
@@ -2791,7 +2779,7 @@ class FullSyncService {
         },
         body: JSON.stringify(trazabilidadArray),
       });
-
+      console.log(JSON.stringify(trazabilidadArray));
       if (!response.ok) {
         const errorText = await response.text();
         console.error(
