@@ -498,7 +498,7 @@ class FullSyncService {
             );
             const tableName = 'ClienteFull';
             const last = this.getLastSyncedAr(tableName) || new Date(0);
-            const fechaInicial = this.formatDateTimeForApi(last);
+            const fechaInicial = this.formatDateForApi(last);
             const url = `${
               this.apiBaseUrl
             }/api/MovilesVentas/clientes?fechaInicial=${encodeURIComponent(
@@ -569,7 +569,7 @@ class FullSyncService {
                     : null,
                   correoFactura: cliente.correoFactura || null,
                   syncedAt: new Date(),
-                  syncedAr: syncedAr,
+                  syncedAr: nowMexico,
                 };
 
                 if (existing) {
@@ -666,12 +666,12 @@ class FullSyncService {
             };
           },
         },
-        {
+       {
           name: 'CarteraIncremental',
           run: async () => {
             const tableName = 'Cartera';
             const last = this.getLastSyncedAr(tableName) || new Date(0);
-            const fechaInicial = this.formatDateTimeForApi(last);
+            const fechaInicial = this.formatDateForApi(last);
             const url = `${
               this.apiBaseUrl
             }/api/MovilesVentas/cartera?fechaInicial=${encodeURIComponent(
@@ -699,15 +699,10 @@ class FullSyncService {
                   item.id,
                 ) as any;
 
-                // Usar fechaLog del response como syncedAr
-                const syncedAr = item.fechaLog
-                  ? new Date(item.fechaLog)
-                  : nowMexico;
-
                 const carteraData: any = {
                   ...item,
                   syncedAt: new Date(),
-                  syncedAr: syncedAr,
+                  syncedAr: nowMexico,
                 };
 
                 if (existing) {
