@@ -248,7 +248,9 @@ class FullSyncService {
   }
 
   /**
-   * Normaliza un Date a un string "YYYY-MM-DD HH:mm" para fechaInicial.
+   * Normaliza un Date a un string "YYYY-MM-DD HH:mm:ss.SSS" para fechaInicial.
+   * Incluye milisegundos + 30ms para asegurar que no se pierdan registros.
+   * Limita a 3 dígitos para compatibilidad con SQL Server.
    */
   private formatDateTimeForApi(date: Date): string {
     const yyyy = date.getFullYear();
@@ -256,7 +258,9 @@ class FullSyncService {
     const dd = String(date.getDate()).padStart(2, '0');
     const hh = String(date.getHours()).padStart(2, '0');
     const mi = String(date.getMinutes()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    const ms = String((date.getMilliseconds() + 30) % 1000).padStart(3, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}.${ms}`;
   }
 
   /**
@@ -334,7 +338,7 @@ class FullSyncService {
     try {
       // Enviar bitácoras de tablas
       const resultBitacoras = await bitacoraService.enviarBitacorasPendientes();
-      
+
       // Enviar sesiones
       // const resultSesiones = await bitacoraService.enviarSesionesPendientes();
 
@@ -547,6 +551,11 @@ class FullSyncService {
                   cliente.id,
                 ) as any;
 
+                // Usar fechaLog del response como syncedAr
+                const syncedAr = cliente.fechaLog
+                  ? new Date(cliente.fechaLog)
+                  : nowMexico;
+
                 const clienteData: any = {
                   id: cliente.id,
                   nombre: cliente.nombre,
@@ -560,7 +569,7 @@ class FullSyncService {
                     : null,
                   correoFactura: cliente.correoFactura || null,
                   syncedAt: new Date(),
-                  syncedAr: nowMexico,
+                  syncedAr: syncedAr,
                 };
 
                 if (existing) {
@@ -595,10 +604,6 @@ class FullSyncService {
           run: async () => {
             const tableName = 'Precio';
             const last = this.getLastSyncedAr(tableName) || new Date(0);
-            console.log('AQUI REVISAMOS');
-            console.log(this.getLastSyncedAr(tableName));
-            console.log(new Date(0));
-            console.log('TERMINAMOS DE REVISAR');
             const fechaInicial = this.formatDateTimeForApi(last);
             const url = `${
               this.apiBaseUrl
@@ -627,10 +632,15 @@ class FullSyncService {
                   precio.id,
                 ) as any;
 
+                // Usar fechaLog del response como syncedAr
+                const syncedAr = precio.fechaLog
+                  ? new Date(precio.fechaLog)
+                  : nowMexico;
+
                 const precioData: any = {
                   ...precio,
                   syncedAt: new Date(),
-                  syncedAr: nowMexico,
+                  syncedAr: syncedAr,
                 };
 
                 if (existing) {
@@ -661,7 +671,7 @@ class FullSyncService {
           run: async () => {
             const tableName = 'Cartera';
             const last = this.getLastSyncedAr(tableName) || new Date(0);
-            const fechaInicial = this.formatDateForApi(last);
+            const fechaInicial = this.formatDateTimeForApi(last);
             const url = `${
               this.apiBaseUrl
             }/api/MovilesVentas/cartera?fechaInicial=${encodeURIComponent(
@@ -689,10 +699,15 @@ class FullSyncService {
                   item.id,
                 ) as any;
 
+                // Usar fechaLog del response como syncedAr
+                const syncedAr = item.fechaLog
+                  ? new Date(item.fechaLog)
+                  : nowMexico;
+
                 const carteraData: any = {
                   ...item,
                   syncedAt: new Date(),
-                  syncedAr: nowMexico,
+                  syncedAr: syncedAr,
                 };
 
                 if (existing) {
@@ -744,12 +759,9 @@ class FullSyncService {
             }
 
             const ventas = await response.json();
-            console.log(ventas, 'Ventas sincronizadas');
             const registrosLeidos = Array.isArray(ventas) ? ventas.length : 0;
             let registrosGuardados = 0;
             let registrosActualizados = 0;
-
-            // Encontrar el registro con el ás alto del servidor
             let maxIdVenta = null;
             let maxId = 0;
             for (const venta of ventas) {
@@ -758,13 +770,13 @@ class FullSyncService {
                 maxIdVenta = venta;
               }
             }
-
-            // Obtener el fechaLog del registro con el ID más alto
             const syncedArValue = maxIdVenta?.fecha ?? nowMexico;
 
             this.realm!.write(() => {
               for (const venta of ventas) {
                 const idMovil = venta.idMovil ?? null;
+
+                // Obtener el fechaLog del registro con el ID más alto
 
                 // Primero verificar si existe por ID (primary key)
                 const existingById = this.realm!.objectForPrimaryKey(
@@ -782,6 +794,7 @@ class FullSyncService {
                   (existingById as any).facturacionMovil =
                     venta.facturacionMovil;
                   (existingById as any).syncedAt = venta.fechaLog ?? nowMexico;
+                  (existingById as any).syncedAr = syncedArValue;
                   registrosActualizados++;
                 } else {
                   // Buscar por idMovil Y claveProd exactos en registros locales (id > 1700000000)
@@ -804,8 +817,10 @@ class FullSyncService {
                       (localVenta as any).folioFactura = venta.folioFactura;
                       (localVenta as any).facturacionMovil =
                         venta.facturacionMovil;
-                      (localVenta as any).syncedAt =
-                        venta.fechaLog ?? nowMexico;
+                      (localVenta as any).syncedAt = venta.fechaLog
+                        ? new Date(venta.fechaLog)
+                        : nowMexico;
+                      (localVenta as any).syncedAr = syncedAr;
                       registrosActualizados++;
                     }
                   } else {
@@ -828,18 +843,18 @@ class FullSyncService {
                       vendedor: venta.vendedor ?? null,
                       folioFactura: venta.folioFactura ?? false,
                       facturacionMovil: venta.facturacionMovil ?? false,
-                      syncedAt: venta.fechaLog ?? nowMexico,
-                      syncedAr: syncedArValue,
+                      syncedAt: venta.fechaLog
+                        ? new Date(venta.fechaLog)
+                        : nowMexico,
+                      syncedAr: syncedAr,
                     });
                     registrosGuardados++;
                   }
                 }
-              }
-
-              // Actualizar syncedAr en TODOS los registros locales con el fechaLog del ID más alto del servidor
-              const allLocalVentas = this.realm!.objects('Venta');
-              for (const localVenta of allLocalVentas) {
-                (localVenta as any).syncedAr = syncedArValue;
+                const allLocalVentas = this.realm!.objects('Venta');
+                for (const localVenta of allLocalVentas) {
+                  (localVenta as any).syncedAr = syncedArValue;
+                }
               }
             });
 
@@ -1066,6 +1081,31 @@ class FullSyncService {
 
           errors.push(`${task.name}: ${msg}`);
 
+          // Intentar capturar el endpoint del error o construirlo
+          let endpointUrl = '';
+
+          // Si el error contiene información del endpoint, extraerlo
+          if (error?.message && error.message.includes('HTTP')) {
+            // Para errores HTTP, intentar construir el endpoint basado en el tipo de tarea
+            if (task.name === 'VentasIncremental') {
+              const last = this.getLastSyncedAr('Venta') || new Date(0);
+              const fechaInicial = this.formatDateTimeForApi(last);
+              endpointUrl = `${
+                this.apiBaseUrl
+              }/api/MovilesVentas/ventas-erp-movil?fechaInicial=${encodeURIComponent(
+                fechaInicial,
+              )}&sucursal=${encodeURIComponent(String(sucursal))}`;
+            } else if (task.name === 'InventarioIncremental') {
+              const now = new Date();
+              const fechaMovto = this.formatDateTimeForApi(now);
+              endpointUrl = `${
+                this.apiBaseUrl
+              }/api/MovilesVentas/inventario-erp-movil/${sucursal}?fechaMovto=${encodeURIComponent(
+                fechaMovto,
+              )}`;
+            }
+          }
+
           // Guardar log de error/timeout
           this.realm!.write(() => {
             this.realm!.create('SyncTableLog', {
@@ -1080,7 +1120,7 @@ class FullSyncService {
               registrosGuardados: 0,
               registrosActualizados: 0,
               duracionMs: new Date().getTime() - fechaInicioTask.getTime(),
-              endpoint: '',
+              endpoint: endpointUrl,
               detalles: msg,
             });
           });
@@ -1091,6 +1131,7 @@ class FullSyncService {
           await bitacoraService.registrarFinSync(bitacoraTablaId, {
             exitoso: false,
             error: error instanceof Error ? error : new Error(msg),
+            detalles: { endpoint: endpointUrl },
           });
 
           tablasConError++;
